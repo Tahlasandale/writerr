@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
+<meta charset="utf-8"><meta name="description" content="Writer Deck — application minimaliste d'écriture concentrée sur mobile."><meta name="keywords" content="écriture, notes, minimaliste, mobile, writer deck"><meta name="author" content="Joseph Humbert"><meta name="theme-color" content="#000000"><link rel="manifest" href="manifest.json">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Writer Deck</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
@@ -383,7 +383,7 @@ function toHtml(d){
     out.push('<p>'+inl(l)+'</p>');
   });
   while(st.length)pop();
-  return'<!DOCTYPE html>\n<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(d.title||'Sans titre')+'</title>\n<style>body{max-width:68ch;margin:0 auto;padding:32px 20px;font:17px/1.75 Georgia,serif;color:#222;background:#fff}h1,h2,h3{line-height:1.3}blockquote{margin:1em 0;padding-left:16px;border-left:3px solid #222;color:#666}li input{margin-right:6px}li:has(>input){list-style:none;margin-left:-1.2em}@media(prefers-color-scheme:dark){body{background:#191919;color:#e3e2e0}blockquote{border-color:#e3e2e0;color:#999}}</style></head>\n<body>\n'+out.join('\n')+'\n</body></html>';
+  return'<!DOCTYPE html>\n<html lang="fr"><head><meta charset="utf-8"><meta name="description" content="Writer Deck — application minimaliste d'écriture concentrée sur mobile."><meta name="keywords" content="écriture, notes, minimaliste, mobile, writer deck"><meta name="author" content="Joseph Humbert"><meta name="theme-color" content="#000000"><link rel="manifest" href="manifest.json"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(d.title||'Sans titre')+'</title>\n<style>body{max-width:68ch;margin:0 auto;padding:32px 20px;font:17px/1.75 Georgia,serif;color:#222;background:#fff}h1,h2,h3{line-height:1.3}blockquote{margin:1em 0;padding-left:16px;border-left:3px solid #222;color:#666}li input{margin-right:6px}li:has(>input){list-style:none;margin-left:-1.2em}@media(prefers-color-scheme:dark){body{background:#191919;color:#e3e2e0}blockquote{border-color:#e3e2e0;color:#999}}</style></head>\n<body>\n'+out.join('\n')+'\n</body></html>';
 }
 $('#bMd').onclick=()=>{save();const d=doc();dl(slug(d.title)+'.md',d.content,'text/markdown')};
 $('#bHtml').onclick=()=>{save();const d=doc();dl(slug(d.title)+'.html',toHtml(d),'text/html')};
@@ -421,6 +421,10 @@ $('#file').onchange=e=>{
   open(docs.find(d=>d.id==cur)?cur:docs[0].id);
 })();
 addEventListener('pagehide',save);
+/* Scroll visible clavier mobile/Bluetooth */
+function keepVisible(el){if(!el)return;el.scrollIntoView({behavior:'smooth',block:'center'});const r=el.getBoundingClientRect();if(r.bottom>window.innerHeight-80||r.top<20)window.scrollBy({top:r.top-60-20,behavior:'smooth'});}
+const ed=document.getElementById('ed');if(ed){const obs=new MutationObserver(()=>{const s=window.getSelection();if(s.rangeCount){const r=s.getRangeAt(0).getBoundingClientRect();if(r.bottom>window.innerHeight-60||r.top<40){const n=s.getRangeAt(0).startContainer.parentElement;if(n)keepVisible(n.closest('#ed')||ed);}}});obs.observe(ed,{childList:true,subtree:true,characterData:true});}
+window.visualViewport&&visualViewport.addEventListener('resize',()=>{document.body.style.height=window.visualViewport.height+'px';if(ed){const s=window.getSelection();if(s.rangeCount){const c=s.getRangeAt(0).startContainer.parentElement;if(c)keepVisible(c.closest('#ed')||ed);}}},{passive:true});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)save()});
 poke();
 </script>
