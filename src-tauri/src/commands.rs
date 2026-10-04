@@ -89,6 +89,7 @@ fn safe(c: &Ctx<'_>, rel: &str) -> Result<PathBuf, Err_> {
 }
 
 /// Lists the notes tree below the configured root.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn list_tree(c: &Ctx<'_>) -> R<Vec<TreeNode>> {
     let root = root_of(c)?;
     Ok(Ok_ {
@@ -98,6 +99,7 @@ pub fn list_tree(c: &Ctx<'_>) -> R<Vec<TreeNode>> {
 }
 
 /// Reads one note; rejects any path that escapes the root.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn read_note(c: &Ctx<'_>, rel: &str) -> R<NotePayload> {
     let path = safe(c, rel)?;
     let content = notes::read_note(&path)?;
@@ -125,6 +127,7 @@ pub struct MtimePayload {
 }
 
 /// Writes a note atomically and marks the path as one of our own writes.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn write_note(c: &Ctx<'_>, rel: &str, content: &str) -> R<MtimePayload> {
     let path = safe(c, rel)?;
     notes::write_note_atomic(&path, content)?;
@@ -149,6 +152,7 @@ pub struct IdPayload {
 }
 
 /// Creates an empty note named after `title` inside `dir`, with a unique name.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn create_note(c: &Ctx<'_>, dir: &str, title: &str) -> R<IdPayload> {
     let dir_path = safe(c, dir)?;
     let path = notes::create_note(&dir_path, title)?;
@@ -161,6 +165,7 @@ pub fn create_note(c: &Ctx<'_>, dir: &str, title: &str) -> R<IdPayload> {
 }
 
 /// Creates a folder (uniquified on collision) below the root.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn create_dir(c: &Ctx<'_>, rel: &str) -> R<IdPayload> {
     let root = root_of(c)?;
     // refuse explicitement la racine : créer un dossier qui porte le nom du coffre
@@ -178,6 +183,7 @@ pub fn create_dir(c: &Ctx<'_>, rel: &str) -> R<IdPayload> {
 }
 
 /// Renames a note or a folder, keeping its parent and extension.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn rename(c: &Ctx<'_>, rel: &str, to_title: &str) -> R<IdPayload> {
     let from = safe(c, rel)?;
     let path = notes::rename(&from, to_title)?;
@@ -190,6 +196,7 @@ pub fn rename(c: &Ctx<'_>, rel: &str, to_title: &str) -> R<IdPayload> {
 }
 
 /// Sends a note or folder to the system trash; the root itself is refused.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn delete(c: &Ctx<'_>, rel: &str) -> R<()> {
     let root = root_of(c)?;
     // delete_within repasse par paths::resolve et refuse explicitement "" / "." :
@@ -202,6 +209,7 @@ pub fn delete(c: &Ctx<'_>, rel: &str) -> R<()> {
 }
 
 /// Returns the current configuration.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn get_config(c: &Ctx<'_>) -> R<Config> {
     let cfg = c.config.lock().map_err(|_| poisoned())?.clone();
     Ok(Ok_ {
@@ -211,6 +219,7 @@ pub fn get_config(c: &Ctx<'_>) -> R<Config> {
 }
 
 /// Replaces the configuration and echoes it back.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn set_config(c: &Ctx<'_>, cfg: Config) -> R<Config> {
     *c.config.lock().map_err(|_| poisoned())? = cfg;
     let back = c.config.lock().map_err(|_| poisoned())?.clone();
@@ -221,6 +230,7 @@ pub fn set_config(c: &Ctx<'_>, cfg: Config) -> R<Config> {
 }
 
 /// Enregistre la racine choisie. `picked: None` = dialogue annulé -> `NoRoot`.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn pick_root(c: &mut Ctx<'_>, picked: Option<PathBuf>) -> R<PathBuf> {
     let Some(p) = picked else {
         return Err(FsError::NoRoot.into());
@@ -236,6 +246,7 @@ pub fn pick_root(c: &mut Ctx<'_>, picked: Option<PathBuf>) -> R<PathBuf> {
 }
 
 /// Sets the notes root programmatically; `None` clears it.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn set_root(c: &mut Ctx<'_>, root: Option<PathBuf>) -> R<PathBuf> {
     match root {
         None => {
@@ -255,6 +266,7 @@ pub fn set_root(c: &mut Ctx<'_>, root: Option<PathBuf>) -> R<PathBuf> {
 
 /// The crate version, mirroring `package.json`.
 /// Returns an [`Ok_`] wrapper so that the wire format is exercised as well.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn app_version(_c: &Ctx<'_>) -> Ok_<&'static str> {
     Ok_ {
         ok: true,
@@ -264,6 +276,7 @@ pub fn app_version(_c: &Ctx<'_>) -> Ok_<&'static str> {
 
 /// Seule `https://github.com/…` est acceptée (§5.11) : le JS ne peut pas faire
 /// ouvrir un `file://` ni un `javascript:`.
+#[cfg_attr(feature = "app", tauri::command)]
 pub fn open_external(c: &Ctx<'_>, url: &str) -> R<String> {
     let ok = url.starts_with("https://github.com/")
         && !url.starts_with("https://github.com.evil")
