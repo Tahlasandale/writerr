@@ -60,19 +60,46 @@ Site purement statique : déposez `index.html`, `manifest.json` et les deux icô
 hébergement de fichiers statiques (Vercel, GitHub Pages, Netlify…). Il n'y a **ni build ni dépendance**,
 le HTML est envoyé tel quel.
 
+## Version bureau (Tauri, en cours)
+
+Le même frontend, avec les documents **réellement écrits en `.md` dans un dossier
+de votre choix** : arborescence, tri, recherche, surveillance du disque et corbeille
+système. Écrivez dans l'application, ou éditez les fichiers avec n'importe quel
+autre éditeur — les deux se voient.
+
+| | PWA (web) | Bureau |
+|---|---|---|
+| Stockage | IndexedDB, repli `localStorage` | fichiers `.md` / `.txt` dans un dossier |
+| Organisation | liste plate | arborescence de dossiers |
+| Titre | libre | nom du fichier |
+| Modification externe | — | rechargement automatique, ou bandeau « Modifié ailleurs » |
+| Suppression | définitive | corbeille du système |
+| Tri, recherche, À propos | ✅ | ✅ |
+
+Le cœur Rust (noms de fichiers sûrs, chemins confinés à la racine, écriture atomique,
+corbeille, configuration, watcher) est testé **sans** GTK/WebKit. Seul le binaire final
+exige ces libs ; la CI le compile séparément.
+
 ## Développement
 
-L'application tient dans `index.html` : balisage, CSS et JS inline, sans bundler ni dépendance.
-Pour éviter toute régression, une suite de tests headless pilote un vrai Chromium via `puppeteer-core` :
-
 ```bash
-npm install     # dépendance de dev uniquement (puppeteer-core)
-npm test        # démarre son propre serveur statique puis lance les tests
+npm install     # dépendances de dev uniquement (puppeteer-core, fake-indexeddb)
+npm test        # tests unitaires (node:test) + bout en bout (Chromium)
+npm run lint    # vérification syntaxique du JS
+npm run serve   # sert le dépôt sur http://127.0.0.1:4173
 ```
 
-Le test cherche un Chromium déjà installé sur la machine (`CHROME_PATH` pour forcer un chemin).
-Le même `npm test` tourne à chaque push via GitHub Actions.
+Rust :
+
+```bash
+cd src-tauri
+cargo test                              # cœur complet, aucune lib GTK requise
+cargo build --features app              # binaire Tauri (nécessite webkit2gtk)
+```
+
+Les tests e2e trouvent un Chromium déjà installé sur la machine ; `CHROME_PATH` force
+un chemin précis. Le même `npm test` tourne à chaque push.
 
 ## Licence
 
-Usage personnel. © Joseph Humbert.
+MIT. © Joseph Humbert.

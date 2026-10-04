@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# permissions minimales : lecture seule par défaut (§9)
+permissions:
+  contents: read
+
+jobs:
+  js:
+    name: tests unitaires + bout en bout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:js
+      # puppeteer-core n'installe aucun navigateur : on fournit un Chrome prêt
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+      - run: npm run test:e2e
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: export-samples
+          path: tests/.tmp/
+          if-no-files-found: ignore
+
+  rust:
+    name: coeur Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+        working-directory: src-tauri
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+      - run: cargo test
+        working-directory: src-tauri
+
+  rust-app:
+    name: binaire Tauri (nécessite les libs GTK/WebKit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: libs système Linux (§8)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+      - name: cargo check du binaire
+        run: cargo check --features app
+        working-directory: src-tauri
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tauri-check-log
+          path: src-tauri/target/debug/.fingerprint
+          if-no-files-found: ignore
