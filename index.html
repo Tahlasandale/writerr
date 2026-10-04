@@ -381,13 +381,13 @@ function toHtml(d){
       if(st.length&&top().ind==i&&top().tag==tag)out.push('</li><li>');
       else{if(st.length&&top().ind==i)pop();out.push('<'+tag+'><li>');st.push({ind:i,tag})}
       const cb=k[2]=='['?'<input type="checkbox" disabled'+(/[xX]/.test(k)?' checked':'')+'> ':'';
-      out.push(cb+inl(l.slice(m[0].length)));return;
+      out[out.length-1]+=cb+inl(l.slice(m[0].length));return;/* même entrée que <li> : pas de saut de ligne dedans */
     }
     while(st.length)pop();
     if(!l.trim())return;
     if(l.trim()==='---')return out.push('<hr>');
     const h=l.match(/^(#{1,3}) (.*)/);if(h)return out.push('<h'+h[1].length+'>'+inl(h[2])+'</h'+h[1].length+'>');
-    const q=l.match(/^> ?(.*)/);if(q)return out.push('<blockquote>'+inl(q[1])+'</blockquote>');
+    const q=l.match(/^> ?(.*)/);if(q)return q[1].trim()?out.push('<blockquote>'+inl(q[1])+'</blockquote>'):void 0;
     out.push('<p>'+inl(l)+'</p>');
   });
   while(st.length)pop();
