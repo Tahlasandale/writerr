@@ -1,109 +1,9 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8"><meta name="description" content="Writer Deck — application minimaliste d'écriture concentrée sur mobile."><meta name="keywords" content="écriture, notes, minimaliste, mobile, writer deck"><meta name="author" content="Joseph Humbert"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta name="theme-color" content="#000000"><link rel="icon" href="icon-192.png" type="image/png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="manifest" href="manifest.json">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Writer Deck</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
-<style>
-:root{--bg:#ffffff;--fg:#37352f;--mut:#9b9a97;--bar:#f7f6f3;--bd:#e9e9e7;--ac:#2383e2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#191919;--fg:#e3e2e0;--mut:#7f7f7f;--bar:#202020;--bd:#2f2f2f;--ac:#529cca}}
-:root[data-theme="dark"]{--bg:#191919;--fg:#e3e2e0;--mut:#7f7f7f;--bar:#202020;--bd:#2f2f2f;--ac:#529cca}
-html,body{height:100%;margin:0}
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
-body{position:relative;overflow:hidden;background:var(--bg);color:var(--fg);font:16px/1.7 'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace}
-button,input,select{font:inherit;color:inherit}
-button{background:none;border:0;cursor:pointer;padding:0}
-#scroll{position:absolute;inset:0;overflow-y:auto}
-#ed{max-width:72ch;margin:0 auto;padding:72px 22px 45vh;min-height:50vh;outline:none;caret-color:var(--ac)}
-.l{min-height:1.7em;white-space:pre-wrap;word-break:break-word}
-.h1{font-size:1.7em;font-weight:700;line-height:1.3;margin:.5em 0 .2em}
-.h2{font-size:1.35em;font-weight:700;line-height:1.35;margin:.4em 0 .15em}
-.h3{font-size:1.12em;font-weight:700;margin:.3em 0 .1em}
-.q{border-left:3px solid var(--fg);padding-left:14px;color:var(--mut)}
-.m{color:var(--mut);font-weight:400;font-style:normal}
-.l:not(.act) .m{display:none}
-.li:not(.act){padding-left:var(--i,0)}
-.l:not(.act) .m[data-g]{display:inline;font-size:0}
-.l:not(.act) .m[data-g]::before{content:attr(data-g);font-size:16px;padding-right:.7ch}
-.m[data-c]{cursor:pointer}
-.l:not(.act) .m[data-c]::before{font-size:20px;line-height:1}
-.n{color:var(--mut)}
-.done{color:var(--mut);text-decoration:line-through}
-.hr:not(.act){min-height:.9em;margin-bottom:.8em;border-bottom:1px solid var(--mut)}
-#bSl{font-weight:700;font-size:18px}
-#sl{position:fixed;z-index:20;width:min(88vw,290px);overflow-y:auto;background:var(--bar);border:1px solid var(--bd);border-radius:8px;padding:4px;box-shadow:0 6px 24px rgba(0,0,0,.18);font-size:14px}
-#sl[hidden]{display:none}
-#sl button{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:6px 8px;border-radius:6px;text-align:left}
-#sl button[aria-selected=true]{background:var(--bd)}
-#sl .ic{width:26px;text-align:center;color:var(--mut);flex:none}
-#sl span{flex:1}
-#sl em{color:var(--mut);font-style:normal;font-size:12px}
-.ui{position:fixed;left:0;right:0;display:flex;align-items:center;gap:6px;background:var(--bg);transition:opacity .5s;z-index:5}
-body.idle .ui{opacity:0;pointer-events:none}
-#top{top:0;padding:calc(env(safe-area-inset-top,0px) + 8px) 8px 8px}
-#bot{bottom:0;padding:8px 16px calc(env(safe-area-inset-bottom,0px) + 8px);justify-content:space-between;color:var(--mut);font-size:12px}
-.ib{width:40px;height:40px;border-radius:6px;font-size:18px;color:var(--mut);flex:none}
-.ib:hover,.ib:focus-visible{background:var(--bar);color:var(--fg)}
-#title{flex:1;min-width:0;border:0;background:none;text-align:center;outline:none;font-weight:700}
-#title::placeholder{color:var(--mut)}
-.dr{position:fixed;top:0;bottom:0;width:min(86vw,320px);background:var(--bar);border:0 solid var(--bd);z-index:10;transition:transform .25s;overflow-y:auto;box-sizing:border-box;padding:calc(env(safe-area-inset-top,0px) + 14px) 14px 24px;font-size:13px}
-#docs{left:0;border-right-width:1px;transform:translateX(-101%)}
-#toc{right:0;border-left-width:1px;transform:translateX(101%)}
-.dr.open{transform:none}
-#scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9;display:none}
-#scrim.on{display:block}
-.dr h4{margin:18px 0 6px;color:var(--mut);font-weight:400}
-.row{display:flex;align-items:center;gap:6px}
-.doc{flex:1;text-align:left;padding:8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.doc.cur{background:var(--bd)}
-.doc small{color:var(--mut);margin-left:6px}
-.act-b{display:block;width:100%;text-align:left;padding:8px;border-radius:6px}
-.act-b:hover{background:var(--bd)}
-select{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:6px;width:100%}
-.t{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:7px 4px}
-.t .bar{height:5px;border-radius:3px;background:var(--fg)}
-.t .lbl{font-size:11px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.empty{color:var(--mut)}
-</style>
-</head>
-<body>
-<div id="scroll"><div id="ed" contenteditable="true" spellcheck="false" aria-label="Zone d'écriture"></div></div>
-
-<div id="top" class="ui">
-  <button class="ib" id="bDocs" aria-label="Documents">≡</button>
-  <input id="title" placeholder="Sans titre" maxlength="255" aria-label="Titre">
-  <button class="ib" id="bTheme" aria-label="Thème">◐</button>
-  <button class="ib" id="bFull" aria-label="Plein écran">⛶</button>
-  <button class="ib" id="bToc" aria-label="Plan">☰</button>
-</div>
-<div id="bot" class="ui"><button class="ib" id="bSl" aria-label="Commandes">/</button><span id="stats">0 mot</span><span id="saved">enregistré</span></div>
-<div id="sl" role="listbox" aria-label="Commandes" hidden></div>
-
-<div id="scrim"></div>
-<aside id="docs" class="dr">
-  <button class="act-b" id="bNew">+ Nouveau document</button>
-  <h4>Documents</h4><div id="list"></div>
-  <h4>Sauvegarde locale</h4>
-  <button class="act-b" id="bMd">Exporter en .md</button>
-  <button class="act-b" id="bHtml">Exporter en .html</button>
-  <button class="act-b" id="bTxt">Exporter en .txt (texte pur)</button>
-  <button class="act-b" id="bJson">Exporter tout en .json</button>
-  <button class="act-b" id="bCopy">Copier (texte pur)</button>
-  <button class="act-b" id="bCopyMd">Copier (Markdown)</button>
-  <button class="act-b" id="bImp">Importer .md / .json</button>
-  <input type="file" id="file" accept=".md,.txt,.json" hidden>
-  <h4>Masquage de l'interface</h4>
-  <select id="idle"><option value="3000">Après 3 s</option><option value="6000">Après 6 s</option><option value="12000">Après 12 s</option><option value="0">Jamais</option></select>
-</aside>
-<aside id="toc" class="dr"><h4 style="margin-top:0">Plan</h4><div id="tocList"></div></aside>
-
-<script>
+/* Writer Deck — logique d'édition et interface.
+   Dépend de lib.js (globals purs) et de config.js (window.WD_CONFIG).
+   Corps déplacé tel quel depuis l'ancien <script> inline. */
 const $=s=>document.querySelector(s),ed=$('#ed');
 const ld=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}};
 const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
-const uid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c=='x'?r:r&3|8).toString(16)});
-const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 let docs=[],cur=ld('mwd:cur',null),act=null,saveT,idleT,idleMs=ld('mwd:idle',6000),db=null,ready=false;
 
 /* ---------- IndexedDB (repli localStorage si indisponible) ---------- */
@@ -121,20 +21,6 @@ const dbPut=d=>db?tx('readwrite',s=>s.put(JSON.parse(JSON.stringify(d)))):Promis
 const dbDel=id=>db?tx('readwrite',s=>s.delete(id)):Promise.resolve(sv('mwd:docs',docs));
 
 /* ---------- Rendu WYSIWYG par ligne ---------- */
-function html(raw){
-  if(raw==='---')return{cls:'hr',ind:0,h:'<span class="m">---</span>'};
-  let m,cls='',pre='',rest=raw,ind=0;
-  if(m=raw.match(/^(#{1,3} |> )/)){pre='<span class="m">'+esc(m[1])+'</span>';rest=raw.slice(m[1].length);cls=m[1][0]=='>'?'q':'h'+(m[1].length-1)}
-  else if(m=raw.match(/^( *)(- \[[ xX]\] |[-*] |\d+\. )/)){
-    const k=m[2];ind=m[1].length;rest=raw.slice(m[0].length);cls='li';
-    pre=ind?'<span class="m">'+m[1]+'</span>':'';
-    if(/^\d/.test(k))pre+='<span class="n">'+k+'</span>';
-    else if(k[2]=='['){const x=/[xX]/.test(k[3]);if(x)cls+=' done';pre+='<span class="m" data-c="1" data-g="'+(x?'☑':'☐')+'">'+k+'</span>'}
-    else pre+='<span class="m" data-g="•">'+k+'</span>';
-  }
-  const body=esc(rest).replace(/\*\*([^*]+)\*\*|\*([^*]+)\*/g,(m,a,b)=>a!=null?'<span class="m">**</span><b>'+a+'</b><span class="m">**</span>':'<span class="m">*</span><i>'+b+'</i><span class="m">*</span>');
-  return{cls,ind,h:(pre+body)||'<br>'};
-}
 function render(l,raw){
   if(raw==null)raw=l.textContent;const r=html(raw);
   l.className='l '+r.cls+(l===act?' act':'');l.style.setProperty('--i',r.ind+'ch');l.innerHTML=r.h;
@@ -220,7 +106,6 @@ const CMD=[
   {n:'Italique',k:'italic',i:'I',h:'*',t:'in',s:'*'},
   {n:'Date du jour',k:'date today',i:'D',h:'',t:'date'}
 ];
-const norm=s=>s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function tok(){
   const s=getSelection();if(!s.rangeCount||!s.isCollapsed)return null;
   const l=s.anchorNode&&getLine(s.anchorNode);if(!l)return null;
@@ -288,7 +173,6 @@ document.addEventListener('selectionchange',()=>{
 
 /* ---------- Documents & persistance ---------- */
 const doc=()=>docs.find(d=>d.id==cur);
-function stats(t){const w=t.replace(/[#>*]/g,' ').trim().split(/\s+/).filter(Boolean).length;return{w,r:w?Math.ceil(w/200):0}}
 function changed(){
   $('#saved').textContent='…';clearTimeout(saveT);saveT=setTimeout(save,300);
   const s=stats(text());$('#stats').textContent=s.w+' mot'+(s.w>1?'s':'')+' · '+s.r+' min';
@@ -367,32 +251,6 @@ $('#idle').onchange=e=>{idleMs=+e.target.value;sv('mwd:idle',idleMs);poke()};
 
 /* ---------- Import / export ---------- */
 function dl(name,data,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-const slug=s=>(s||'document').replace(/[^\w\-]+/g,'_').slice(0,60);
-const RX=/\*\*([^*]+)\*\*|\*([^*]+)\*/g;
-const plain=t=>t.split('\n').map(l=>l==='---'?'———':l.replace(/^(#{1,3} |> )/,'').replace(/^( *)- \[ \] /,'$1☐ ').replace(/^( *)- \[[xX]\] /,'$1☑ ').replace(/^( *)[-*] /,'$1• ').replace(RX,(m,a,b)=>a!=null?a:b)).join('\n');
-const inl=s=>esc(s).replace(RX,(m,a,b)=>a!=null?'<strong>'+a+'</strong>':'<em>'+b+'</em>');
-function toHtml(d){
-  const out=[],st=[],top=()=>st[st.length-1],pop=()=>out.push('</li></'+st.pop().tag+'>');
-  d.content.split('\n').forEach(l=>{
-    const m=l.match(/^( *)(- \[[ xX]\] |[-*] |\d+\. )/);
-    if(m){
-      const i=m[1].length,k=m[2],tag=/^\d/.test(k)?'ol':'ul';
-      while(st.length&&top().ind>i)pop();
-      if(st.length&&top().ind==i&&top().tag==tag)out.push('</li><li>');
-      else{if(st.length&&top().ind==i)pop();out.push('<'+tag+'><li>');st.push({ind:i,tag})}
-      const cb=k[2]=='['?'<input type="checkbox" disabled'+(/[xX]/.test(k)?' checked':'')+'> ':'';
-      out[out.length-1]+=cb+inl(l.slice(m[0].length));return;/* même entrée que <li> : pas de saut de ligne dedans */
-    }
-    while(st.length)pop();
-    if(!l.trim())return;
-    if(l.trim()==='---')return out.push('<hr>');
-    const h=l.match(/^(#{1,3}) (.*)/);if(h)return out.push('<h'+h[1].length+'>'+inl(h[2])+'</h'+h[1].length+'>');
-    const q=l.match(/^> ?(.*)/);if(q)return q[1].trim()?out.push('<blockquote>'+inl(q[1])+'</blockquote>'):void 0;
-    out.push('<p>'+inl(l)+'</p>');
-  });
-  while(st.length)pop();
-  return'<!DOCTYPE html>\n<html lang="fr"><head><meta charset="utf-8"><meta name="description" content="Writer Deck — application minimaliste d\'écriture concentrée sur mobile."><meta name="keywords" content="écriture, notes, minimaliste, mobile, writer deck"><meta name="author" content="Joseph Humbert"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta name="theme-color" content="#000000"><link rel="manifest" href="manifest.json"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(d.title||'Sans titre')+'</title>\n<style>body{max-width:68ch;margin:0 auto;padding:32px 20px;font:17px/1.75 Georgia,serif;color:#222;background:#fff}h1,h2,h3{line-height:1.3}blockquote{margin:1em 0;padding-left:16px;border-left:3px solid #222;color:#666}li input{margin-right:6px}li:has(>input){list-style:none;margin-left:-1.2em}@media(prefers-color-scheme:dark){body{background:#191919;color:#e3e2e0}blockquote{border-color:#e3e2e0;color:#999}}</style></head>\n<body>\n'+out.join('\n')+'\n</body></html>';
-}
 $('#bMd').onclick=()=>{save();const d=doc();dl(slug(d.title)+'.md',d.content,'text/markdown')};
 $('#bHtml').onclick=()=>{save();const d=doc();dl(slug(d.title)+'.html',toHtml(d),'text/html')};
 $('#bTxt').onclick=()=>{save();const d=doc();dl(slug(d.title)+'.txt',plain(d.content),'text/plain')};
@@ -432,7 +290,3 @@ addEventListener('pagehide',save);
 /* Scroll visible clavier mobile/Bluetooth — MutationObserver supprimé, keepCaret appliqué */
 function keepCaret(el){if(!el)return;/* scroll simple, sans observer */}
 poke();
-</script>
-</body>
-</html>
-

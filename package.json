@@ -1,13 +1,18 @@
 {
   "name": "writerr",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "Writer Deck — écriture concentrée, application d'écriture Markdown mono-fichier",
+  "description": "Writer Deck — écriture concentrée, éditeur Markdown WYSIWYG mono-fichier (PWA + desktop Tauri)",
   "scripts": {
-    "test": "node tests/writerr.test.js",
-    "serve": "node tests/serve.js"
+    "test": "npm run test:js && npm run test:e2e",
+    "test:js": "node --test \"tests/js/**/*.test.js\"",
+    "test:e2e": "node tests/writerr.test.js",
+    "lint": "node --check web/lib.js && node --check web/app.js && node --check web/search.js && node --check web/storage.js && node --check web/config.js",
+    "serve": "node tests/serve.js",
+    "tauri": "tauri"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.0.0",
     "puppeteer-core": "^25.12.0"
   }
 }

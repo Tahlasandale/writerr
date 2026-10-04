@@ -71,7 +71,7 @@ const want = n => !only || n.includes(only);
   const errs = [];
   page.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
   page.on('console', m => { if (m.type() === 'error' && !m.text().includes('404')) errs.push(m.text()); });
-  await page.goto(BASE + '/index.html', { waitUntil: 'networkidle2' });
+  await page.goto(BASE + '/web/index.html', { waitUntil: 'networkidle2' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'networkidle2' });
   await new Promise(r => setTimeout(r, 400));
@@ -387,7 +387,7 @@ const want = n => !only || n.includes(only);
   if (want('S')) {
     const p2 = await browser.newPage();
     await p2.evaluateOnNewDocument(() => { Object.defineProperty(window, 'indexedDB', { get: () => { throw new Error('blocked'); } }); });
-    await p2.goto(BASE + '/index.html', { waitUntil: 'networkidle2' });
+    await p2.goto(BASE + '/web/index.html', { waitUntil: 'networkidle2' });
     await new Promise(r => setTimeout(r, 500));
     const boot = await p2.evaluate(() => ({ lines: document.querySelectorAll('#ed > *').length, docs: document.querySelectorAll('#list .row').length }));
     check('S1 boots without IndexedDB', boot.lines > 1, boot);

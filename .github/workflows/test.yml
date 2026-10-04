@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -23,10 +23,13 @@ jobs:
       - uses: browser-actions/setup-chrome@v1
         id: chrome
 
-      - name: Lancer la suite de tests
+      - name: Tests unitaires (node:test)
+        run: npm run test:js
+
+      - name: Tests bout en bout (Chromium)
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-        run: npm test
+        run: npm run test:e2e
 
       - name: Archiver les artefacts d'export
         if: always()
