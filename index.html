@@ -281,7 +281,9 @@ if(window.visualViewport)visualViewport.addEventListener('resize',()=>{if(!sl.hi
 document.addEventListener('selectionchange',()=>{
   const s=getSelection(),l=s.anchorNode&&ed.contains(s.anchorNode)?getLine(s.anchorNode):null;
   if(l!==act){act&&act.classList.remove('act');act=l;l&&l.classList.add('act')}
-  if(!sl.hidden&&!tok())close();
+  const t=tok();
+  if(dis&&(!t||t.l!==dis.l||t.st!==dis.st))dis=null;/* le menu réapparaît dès qu'on quitte la commande ignorée */
+  if(!sl.hidden&&!t)close();
 });
 
 /* ---------- Documents & persistance ---------- */
@@ -300,6 +302,7 @@ function save(){
 function open(id){
   if(doc())save();cur=id;const d=doc();
   ed.innerHTML='';act=null;d.content.split('\n').forEach(t=>ed.appendChild(mk(t)));
+  $('#scroll').scrollTop=0;
   $('#title').value=d.title;ready=true;changed();sv('mwd:cur',cur);list();
 }
 function create(title,content){
