@@ -1,0 +1,37 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # puppeteer-core n'installe aucun navigateur : on fournit un Chrome déjà prêt
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+
+      - name: Lancer la suite de tests
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: npm test
+
+      - name: Archiver les artefacts d'export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-samples
+          path: tests/.tmp/
+          if-no-files-found: ignore
