@@ -159,19 +159,23 @@ ed.addEventListener('input',e=>{
   changed();upd(true);
 });
 ed.addEventListener('compositionend',()=>ed.dispatchEvent(new Event('input')));
-function split(){
+function split(cont){
   const s=getSelection();if(!s.rangeCount)return;
   if(!s.isCollapsed)document.execCommand('delete');
   const l=getLine(s.anchorNode);if(!l)return;
   const raw=l.textContent,o=off(l),before=raw.slice(0,o),after=raw.slice(o);
+  const auto=cont!==false;/* collage : on recopie le texte tel quel, sans prolonger la liste */
   const li=before.match(/^( *)(- \[[ xX]\] |[-*] |\d+\. )/);
-  if(li&&before.length==li[0].length&&!after){render(l,'');put(l,0);changed();return}
+  if(auto&&li&&before.length==li[0].length&&!after){render(l,'');put(l,0);changed();return}
+  const qm=before.match(/^( *)> ?$/);/* citation vide -> on sort de la citation */
+  if(auto&&qm&&!after){render(l,qm[1]);put(l,qm[1].length);changed();return}
   let pre='';
-  if(li)pre=li[1]+(/^\d/.test(li[2])?(parseInt(li[2])+1)+'. ':li[2][2]=='['?'- [ ] ':li[2]);
-  else if(/^> /.test(before)&&before.length>2)pre='> ';
+  if(li)pre=auto?(li[1]+(/^\d/.test(li[2])?(parseInt(li[2])+1)+'. ':li[2][2]=='['?'- [ ] ':li[2])):'';
+  else if(auto&&/^> /.test(before)&&before.length>2)pre='> ';
   render(l,before);const n=mk(pre+after);l.after(n);put(n,pre.length);
   n.scrollIntoView({block:'nearest'});changed();
 }
+const pasteBreak=()=>split(false);
 ed.addEventListener('keydown',e=>{
   if(!sl.hidden&&!e.isComposing){
     if(e.key=='ArrowDown'||e.key=='ArrowUp'){e.preventDefault();sel(idx+(e.key=='ArrowDown'?1:-1));return}
@@ -198,7 +202,7 @@ ed.addEventListener('pointerdown',e=>{
 ['mousedown','click'].forEach(t=>ed.addEventListener(t,e=>{if(cbox(e))e.preventDefault()}));
 ed.addEventListener('paste',e=>{
   e.preventDefault();
-  (e.clipboardData.getData('text/plain')||'').replace(/\r/g,'').split('\n').forEach((t,i)=>{if(i)split();if(t)document.execCommand('insertText',false,t)});
+  (e.clipboardData.getData('text/plain')||'').replace(/\r/g,'').split('\n').forEach((t,i)=>{if(i)pasteBreak();if(t)document.execCommand('insertText',false,t)});
 });
 /* ---------- Slash commands ---------- */
 const sl=$('#sl');let cmds=[],idx=0,dis=null;
