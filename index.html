@@ -252,11 +252,12 @@ function apply(c){
   else if(c.t=='date'){const d=new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});render(l,raw.slice(0,st)+d+raw.slice(o));put(l,st+d.length)}
   else if(c.t=='hr'){
     const e=!base.trim(),h=e?l:mk('---');
-    if(e)render(l,'---');else{render(l,base);l.after(h)}
+    if(e)render(l,'---');else{render(l,base.replace(/[ \t]+$/,''));l.after(h)}
     const n=mk('');h.after(n);put(n,0);n.scrollIntoView({block:'nearest'});
   }else{
-    const m=base.match(/^( *)(#{1,3} |> |- \[[ xX]\] |[-*] |\d+\. )/),sp=m?m[0].length:0;
-    render(l,c.p+base.slice(sp));put(l,c.p.length+Math.max(0,st-sp));
+    const head=base.replace(/[ \t]+$/,'');/* l'espace saisi avant "/" n'est pas un séparateur de plus */
+    const m=head.match(/^( *)(#{1,3} |> |- \[[ xX]\] |[-*] |\d+\. )/),sp=m?m[0].length:0;
+    render(l,c.p+head.slice(sp));put(l,c.p.length+Math.max(0,Math.min(st,head.length)-sp));
   }
   changed();
 }
