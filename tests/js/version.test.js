@@ -26,8 +26,14 @@ test('le binaire Tauri est optionnel (cargo test sans libs GTK)', () => {
   // exigerait webkit2gtk sur chaque machine
   assert.match(cargo, /\[\[bin\]\][\s\S]*required-features = \["app"\]/);
   assert.match(cargo, /\[features\][\s\S]*default = \[\]/);
-  assert.ok(!fs.existsSync(path.join(ROOT, 'src-tauri', 'build.rs')),
-    "pas de build.rs : tauri-build n'est pas requis hors feature app");
+  // build.rs DOIT exister : tauri::generate_context! lit des fichiers dans OUT_DIR.
+  // Mais tauri-build exige rustc 1.90, donc il doit rester optionnel, sinon
+  // `cargo test` est cassé sur les machines en 1.85.
+  const buildRs = fs.readFileSync(path.join(ROOT, 'src-tauri', 'build.rs'), 'utf8');
+  assert.match(buildRs, /#\[cfg\(feature = "app"\)\]/,
+    "build.rs conditionne l'appel à tauri_build au feature app");
+  assert.match(cargo, /tauri-build = \{[^}]*optional = true/,
+    'tauri-build est une build-dependency optionnelle');
 });
 
 test('l’identifiant Tauri est fixé', () => {

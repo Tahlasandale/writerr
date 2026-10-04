@@ -10,6 +10,9 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use tauri::Emitter;
+use tauri::Manager; // state(), manage(), get_webview_window()
+
 use writer_deck::commands::{self, Ctx};
 use writer_deck::notes::SystemTrasher;
 use writer_deck::watcher::{FsWatcher, WatchEvent, DEBOUNCE};
@@ -28,11 +31,11 @@ struct App {
 /// Le watcher est un bonus : sans racine, ou si l'OS refuse l'observation,
 /// l'application fonctionne en lecture/écriture directes.
 fn start_watcher(app: &tauri::AppHandle) {
-    let state = app.state::<App>();
-    let Some(root) = state.ctx.root.clone() else {
+    let root = app.state::<App>().ctx.root.clone();
+    let Some(root) = root else {
         return;
     };
-    let shared = Arc::clone(&state.self_writes);
+    let shared = Arc::clone(&app.state::<App>().self_writes);
     let Ok(watcher) = FsWatcher::start(&root, shared) else {
         return;
     };
@@ -60,15 +63,19 @@ fn build() -> tauri::Builder<tauri::Wry> {
             // Box::leak : le Trasher doit vivre aussi longtemps que l'état global.
             let trasher: &'static dyn writer_deck::notes::Trasher =
                 Box::leak(Box::new(SystemTrasher));
+            // Le registre anti-boucle est partage : une seule instance, celle que
+            // le watcher consulte ET que les commandes alimentent via Ctx.
             let self_writes = Arc::new(Mutex::new(SelfWrites::new()));
+            let for_ctx = self_writes
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_else(|_| SelfWrites::new());
 
             app.manage(App {
                 ctx: Ctx {
                     root: cfg.root.as_ref().map(PathBuf::from),
                     config: Mutex::new(cfg),
-                    self_writes: Mutex::new(
-                        self_writes.lock().map(|g| g.clone()).unwrap_or_default(),
-                    ),
+                    self_writes: Mutex::new(for_ctx),
                     open_urls: Mutex::new(BTreeMap::new()),
                     trasher,
                 },

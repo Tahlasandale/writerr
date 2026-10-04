@@ -96,12 +96,26 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
 
 ## Le binaire Tauri est derrière le feature `app`
 
-- **Décision** : `[[bin]] required-features = ["app"]`, `default = []`, et **pas de
-  `build.rs`**.
+- **Décision** : `[[bin]] required-features = ["app"]` et `default = []`.
 - **Pourquoi** : `tauri` et `tauri-build` exigent webkit2gtk/GTK. Sans cette porte,
-  `cargo test` échouerait sur toute machine de dev qui n'a pas ces libs. Le test
-  `tests/js/version.test.js` verrouille cette contrainte.
-- **Vérifié en CI** : `cargo check --features app` sur `ubuntu-latest` avec les libs §8.
+  `cargo test` échouerait sur toute machine de dev qui n'a pas ces libs.
+
+## `build.rs` existe, mais `tauri-build` est optionnel
+
+- **Décision** : `build.rs` est présent et appelle `tauri_build::build()`
+  **seulement** sous `#[cfg(feature = "app")]` ; la build-dependency est `optional`.
+- **Pourquoi** : deux contraintes seemingly opposées.
+  1. `tauri::generate_context!` lit des fichiers générés dans `OUT_DIR` → sans
+     `build.rs`, `cargo check --features app` échoue avec
+     « OUT_DIR env var is not set » (constaté en CI sur le premier run).
+  2. `tauri-build` exige rustc 1.90 ; la machine de dev est en 1.85.1 → le lier
+     inconditionnellement casse `cargo test` en local.
+  Cargo accepte une build-dependency `optional` : c'est la seule porte qui satisfait
+  les deux. Le garde est un `#[cfg]` et non un test d'environnement, parce que Rust
+  résout le symbole même à l'intérieur d'un `if` runtime.
+- **Verrouillé par** `tests/js/version.test.js`.
+- **Vérifié en CI** : `cargo check --features app` sur `ubuntu-latest` avec les libs §8
+  (rustc récent) ; `cargo test` local en 1.85.1 sans libs.
 
 ## Le watcher tranche les `Modify` sur l'état du disque
 

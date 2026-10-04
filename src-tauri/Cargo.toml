@@ -11,14 +11,13 @@ publish = false
 name = "writer_deck"
 path = "src/lib.rs"
 
-# build.rs est absent : `tauri-build` est trop lourd a compiler hors feature `app`.
 # Le binaire Tauri est une cible OPTIONNELLE : il exige les libs systeme
-# GTK/WebKit, absentes de la plupart des machines de dev et de `cargo test`.
+# GTK/WebKit, absentes de la plupart des machines de dev.
 #   cargo test                 -> compile et teste la lib seule (aucune lib GTK requise)
 #   cargo build --features app -> compile le binaire Tauri (libs GTK necessaires)
 [features]
 default = []
-app = ["dep:tauri",  "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener"]
+app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener"]
 
 [[bin]]
 name = "writer-deck"
@@ -35,9 +34,15 @@ trash = "5"
 
 # binaire Tauri (uniquement avec --features app)
 tauri = { version = "2", optional = true }
-[build-dependencies]
 tauri-plugin-dialog = { version = "2", optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
+
+# tauri-build est un build-dependency SANS CONDITION : generate_context! a besoin de
+# OUT_DIR, donc build.rs doit toujours exister. Il est sans dependance GTK, donc
+# `cargo test` reste jouable sans libs systeme ; seul l'appel a tauri_build::build()
+# est conditionne au feature `app` (cf. build.rs).
+[build-dependencies]
+tauri-build = { version = "2", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
