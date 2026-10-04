@@ -1,0 +1,13 @@
+{
+  "name": "writerr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Writer Deck — écriture concentrée, application d'écriture Markdown mono-fichier",
+  "scripts": {
+    "test": "node tests/writerr.test.js",
+    "serve": "node tests/serve.js"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}
