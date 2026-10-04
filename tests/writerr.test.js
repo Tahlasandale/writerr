@@ -592,6 +592,142 @@ const want = n => !only || n.includes(only);
     await new Promise(r => setTimeout(r, 150));
   }
 
+  /* ---------------- U. desktop simulé : le backend est choisi à l'exécution (I2) --- */
+  if (want('U')) {
+    // Faux runtime Tauri : invoke() répond comme les commandes Rust de §5.11.
+    const p2 = await browser.newPage();
+    await p2.evaluateOnNewDocument(() => {
+      const calls = [];
+      window.__calls = calls;
+      const tree = {
+        modified: 1000, created: 1000, size: 0, is_dir: false, children: [],
+      };
+      const files = {
+        'Zeta.md': { content: '# Zeta\n\npremier contenu zzz' },
+        'Alpha.md': { content: 'contenu de alpha' },
+        'Projet/Deep.md': { content: 'Algorithme de tri' },
+      };
+      let mtime = 1000;
+      const reply = (cmd, args) => {
+        calls.push([cmd, args]);
+        switch (cmd) {
+          case 'get_config': return Promise.resolve({ root: '/tmp/notes', theme: null, idle_ms: 6000, sort: { key: 'modified', dir: 'desc' }, last_open: null });
+          // L'ordre du tableau est celui du FS ; c'est le TRI côté JS qui le réordonne.
+          case 'list_tree': return Promise.resolve([
+            { name: 'Projet', path: '/tmp/notes/Projet', is_dir: true, modified: 1000, created: 1000, size: 0, children: [
+              { name: 'Deep.md', path: '/tmp/notes/Projet/Deep.md', is_dir: false, modified: 1000, created: 1000, size: 20, children: [] },
+            ] },
+            { name: 'Alpha.md', path: '/tmp/notes/Alpha.md', is_dir: false, modified: 1000, created: 1000, size: 16, children: [] },
+            { name: 'Zeta.md', path: '/tmp/notes/Zeta.md', is_dir: false, modified: 1000, created: 1000, size: 24, children: [] },
+          ]);
+          case 'read_note': return Promise.resolve({ content: files[args.rel].content, mtime });
+          case 'write_note': mtime += 10; files[args.rel] = { content: args.content }; return Promise.resolve({ mtime });
+          case 'create_note': return Promise.resolve({ id: (args.title || 'Sans titre') + '.md' });
+          case 'create_dir': return Promise.resolve({ id: args.rel ? args.rel + '/Nouveau' : 'Nouveau' });
+          case 'rename': return Promise.resolve({ id: args.rel.replace(/\/[^/]+$/, '') + '/' + args.toTitle + '.md' });
+          case 'delete': delete files[args.rel]; return Promise.resolve(null);
+          case 'app_version': return Promise.resolve('0.1.0');
+          case 'open_external': return Promise.resolve(args.url);
+          default: return Promise.resolve(tree);
+        }
+      };
+      window.__TAURI__ = {
+        core: { invoke: reply },
+        event: { listen: () => Promise.resolve(() => { }) },
+        window: { getCurrentWindow: () => ({ onCloseRequested: () => { }, destroy: () => Promise.resolve() }) },
+      };
+    });
+    // Le tri est un réglage PERSISTÉ (mwd:sort) : on repart d'un état connu pour
+    // que ce bloc ne dépende pas du groupe précédent.
+    await p2.goto(BASE + '/web/index.html', { waitUntil: 'networkidle2' });
+    await p2.evaluate(() => localStorage.removeItem('mwd:sort'));
+    await p2.reload({ waitUntil: 'networkidle2' });
+    await new Promise(r => setTimeout(r, 700));
+
+    // Le tri par défaut est `modified:desc` (spec §5.4) et TOUS les mtime du mock
+    // valent 1000 : le départage est donc le nom, à l'envers → Projet, Deep, Zeta, Alpha.
+    // (C'est le comportement correct de sortNodes, pas un défaut d'affichage.)
+    const st = await p2.evaluate(() => ({
+      calls: window.__calls.map(c => c[0]),
+      isDesktop: !!document.querySelector('#bNewDir:not([hidden])'),
+      rows: [...document.querySelectorAll('#list .tree-l .nm')].map(n => n.textContent),
+      title: document.querySelector('#title').value,
+      lines: [...document.querySelectorAll('#ed > *')].map(l => l.textContent),
+    }));
+    check('U1 backend desktop sélectionné (get_config + list_tree)', st.calls.includes('get_config') && st.calls.includes('list_tree'), st.calls);
+    check('U2 bouton « Nouveau dossier » visible en desktop', st.isDesktop, st);
+    check('U3 arborescence : dossiers avant fichiers, extension retirée, nom à l\'envers',
+      JSON.stringify(st.rows) === JSON.stringify(['Projet', 'Deep', 'Zeta', 'Alpha']), st.rows);
+    check('U4 premier FICHIER ouvert (le dossier Projet est sauté), chargé depuis le disque',
+      st.title === 'Deep' && /Algorithme/.test(st.lines.join('\n')), { t: st.title, l: st.lines });
+
+    // le tri par taille est disponible en desktop (data-fs)
+    const sorts = await p2.evaluate(() => [...document.querySelectorAll('#sort option')].map(o => ({ v: o.value, hidden: o.hidden })));
+    check('U5 tri par taille disponible en desktop', sorts.filter(o => !o.hidden).length >= 5, sorts);
+
+    // écrire déclenche write_note
+    await p2.evaluate(() => {
+      const l = document.querySelector('#ed > *');
+      const r = document.createRange(); r.selectNodeContents(l); r.collapse(false);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      document.querySelector('#ed').focus();
+      document.execCommand('insertText', false, 'ajout');
+    });
+    await new Promise(r => setTimeout(r, 600));
+    const w = await p2.evaluate(() => window.__calls.filter(c => c[0] === 'write_note'));
+    check('U6 la frappe appelle write_note (le .md est la source de vérité)', w.length >= 1 && typeof w[0][1].content === 'string', w.slice(0, 2));
+
+    // pas de dbPut / IndexedDB en desktop
+    const noIdb = await p2.evaluate(() => !window.__calls.some(c => c[0] === 'pick_root' || c[0] === 'delete'));
+    check('U7 aucun appel FS direct depuis le JS', noIdb);
+
+    // renommer = renommer le fichier, debounce 800 ms
+    await p2.evaluate(() => { const t = document.querySelector('#title'); t.value = 'Nouveau'; t.dispatchEvent(new Event('input', { bubbles: true })); });
+    await new Promise(r => setTimeout(r, 1200));
+    const rn = await p2.evaluate(() => window.__calls.filter(c => c[0] === 'rename'));
+    check('U8 renommage du fichier après debounce', rn.length === 1 && rn[0][1].toTitle === 'Nouveau', rn);
+
+    // recherche indexe les fichiers du dossier (le contenu vient bien du FS via read_note)
+    await p2.reload({ waitUntil: 'networkidle2' });
+    await new Promise(r => setTimeout(r, 800));
+    await p2.evaluate(() => { document.querySelector('#bDocs').click(); });
+    await new Promise(r => setTimeout(r, 150));
+    await p2.evaluate(() => { const q = document.querySelector('#q'); q.value = 'algorithme'; q.dispatchEvent(new Event('input', { bubbles: true })); });
+    await new Promise(r => setTimeout(r, 400));
+    const hits = await p2.evaluate(() => [...document.querySelectorAll('#results .res b')].map(b => b.textContent));
+    check('U9 recherche dans les fichiers du dossier', hits.some(t => /Deep/.test(t)), hits);
+
+    // panneau À propos : version desktop + open_external
+    await p2.evaluate(() => { document.querySelector('#q').value = ''; document.querySelector('#q').dispatchEvent(new Event('input', { bubbles: true })); });
+    await p2.evaluate(() => document.querySelector('#bDocs').click());
+    await new Promise(r => setTimeout(r, 150));
+    await p2.evaluate(() => document.querySelector('#bAbout').click());
+    await new Promise(r => setTimeout(r, 300));
+    const about = await p2.evaluate(() => ({ text: document.querySelector('#aboutC').textContent, links: document.querySelectorAll('#aboutC a').length }));
+    check('U10 À propos en mode bureau', /bureau/.test(about.text) && about.links === 4, about);
+    await p2.evaluate(() => document.querySelectorAll('#aboutC a')[1].click());
+    await new Promise(r => setTimeout(r, 200));
+    const opened = await p2.evaluate(() => window.__calls.filter(c => c[0] === 'open_external'));
+    check('U11 clic sur un lien = open_external (pas de navigation)', opened.length === 1 && /releases\/latest/.test(opened[0][1].url), opened);
+
+    await p2.close();
+
+    // Sans __TAURI__, la PWA doit rester IDENTIQUE (I1) : liste plate, pas de dossier
+    const p3 = await browser.newPage();
+    await p3.goto(BASE + '/web/index.html', { waitUntil: 'networkidle2' });
+    await new Promise(r => setTimeout(r, 700));
+    const pwa = await p3.evaluate(() => ({
+      isDesktop: !!document.querySelector('#bNewDir:not([hidden])'),
+      hasDesktop: !!window.__TAURI__,
+      flat: document.querySelectorAll('#list .doc').length,
+      rows: [...document.querySelectorAll('#list .doc')].map(b => b.textContent),
+    }));
+    check('U12 PWA inchangée : liste plate, pas de bouton dossier', !pwa.hasDesktop && !pwa.isDesktop && pwa.flat >= 1, pwa);
+    check('U13 PWA : pas de classes d\'arborescence',
+      await p3.evaluate(() => document.querySelectorAll('#list .tree-l').length) === 0);
+    await p3.close();
+  }
+
   /* ---------------- P. escape then leave / re-enter the token ---------------- */
   if (want('P')) {
     await reset(page, ['abc']); await putCaret(page, 0, 3); await type(page, ' /h');

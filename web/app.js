@@ -171,8 +171,94 @@ document.addEventListener('selectionchange',()=>{
   if(!sl.hidden&&!t)close();
 });
 
+/* ---------- Backend desktop (Tauri) ou IndexedDB (PWA) ---------- */
+/* Le backend est choisi à l'exécution : window.__TAURI__ présent ou non (invariant I2).
+   TauriAdapter ne mappe QUE les commandes Rust de §5.11 ; aucun accès FS direct. */
+function isDesktop(){return !!window.__TAURI__}
+function invoke(cmd,args){return window.__TAURI__.core.invoke(cmd,args)}
+const IS_DESKTOP=isDesktop();
+/* mtime connu de l'editor vs mtime sur disque : l'entrée de `reconcile` (§5.9) */
+
+function TauriAdapter(){
+  this.kind='tauri';
+  this.supportsFolders=true;
+  this._sub=null;
+}
+TauriAdapter.prototype.init=function(){
+  const self=this;
+  return this.get_config().then(cfg=>{
+    self.config=cfg;
+    if(!cfg.root){self.root=null;return null}
+    self.root=cfg.root;
+    return self._listen();
+  });
+};
+TauriAdapter.prototype._listen=function(){
+  const self=this;
+  const h=window.__TAURI__.event;
+  const p1=h.listen('tree-changed',()=>{reindexTree();list()});
+  const p2=h.listen('note-changed',e=>{
+    const id=toId(e.payload[0]);
+    const mt=e.payload[1];
+    diskMtime[id]=mt;
+    const r=reconcile({dirty:changedSinceOpen.has(id),knownMtime:knownMtime[id],diskMtime:mt});
+    if(r==='reload')open(id);
+    else if(r==='conflict')showConflict(id);
+  });
+  return Promise.all([p1,p2]).then(r=>{self._sub=()=>{r.forEach(f=>f&&f())}}).then(()=>self.refresh());
+};
+TauriAdapter.prototype.onExternalChange=function(cb){this._cb=cb;return ()=>{this._cb=null}};
+TauriAdapter.prototype.refresh=function(){return this.list_tree().then(t=>{self_tree=t;return t})};
+/* Chaque methode du contrat appelle la commande Rust du meme nom (§5.11). */
+['get_config','set_config','list_tree','create_dir','app_version'].forEach(k=>{
+  TauriAdapter.prototype[k]=function(){return invoke(k)};
+});
+TauriAdapter.prototype.read=function(id){return invoke('read_note',{rel:toPath(id)})};
+TauriAdapter.prototype.write=function(id,content){return invoke('write_note',{rel:toPath(id),content}).then(r=>{knownMtime[id]=r.mtime;return r})};
+TauriAdapter.prototype.create=function(dirId,title){return invoke('create_note',{dir:toPath(dirId||''),title})};
+TauriAdapter.prototype.rename=function(id,newTitle){return invoke('rename',{rel:toPath(id),toTitle:newTitle})};
+TauriAdapter.prototype.remove=function(id){return invoke('delete',{rel:toPath(id)})};
+TauriAdapter.prototype.pickRoot=function(){return invoke('pick_root',{}).then(r=>{this.root=r.data;return this.list_tree()})};
+/* id (web) <-> chemin relatif (desktop) : même valeur, deux traitements */
+const toPath=id=>String(id==null?'':id).replace(/\\/g,'/');
+const toId=rel=>String(rel==null?'':rel).replace(/\\/g,'/');
+let self_tree=[];
+const changedSinceOpen=new Set();
+
+/* L'écran « choisir un dossier » n'existe qu'en desktop : la PWA n'a pas de FS. */
+function pickRootUI(){
+  if(!IS_DESKTOP){$('#saved').textContent='disponible uniquement en version bureau';return}
+  invoke('pick_root',{}).then(r=>{
+    document.body.removeAttribute('data-noroot');
+    store.root=r.data;
+    return store.list_tree();
+  }).then(t=>{self_tree=t;list();buildTree()}).catch(()=>{
+    $('#saved').textContent='choix annulé';
+  });
+}
+
 /* ---------- Documents & persistance ---------- */
-const doc=()=>docs.find(d=>d.id==cur);
+/* `docs` est la liste EN MÉMOIRE des métadonnées (§6.2) : elle existe aussi en
+   desktop, où elle est reconstruite depuis l'arborescence. Sans elle, doc()
+   renverrait null et save() n'écrirait jamais le .md. */
+const doc=()=>docs.find(d=>String(d.id)===String(cur));
+function syncDocsFromTree(){
+  const out=[];
+  const walk=ns=>ns.forEach(n=>{
+    if(n.is_dir){walk(n.children||[]);return}
+    const id=toRel(n.path);
+    const known=docs.find(d=>String(d.id)===id);
+    out.push(known||{id:id,title:nameOf(n),content:'',createdAt:n.created||n.modified||0,
+                     updatedAt:n.modified||0,wordCount:0,readingTime:0});
+  });
+  walk(self_tree);
+  if(cur&&!out.some(d=>String(d.id)===String(cur))){
+    const n=findNode(cur);
+    if(n)out.push({id:toRel(n.path),title:nameOf(n),content:'',createdAt:n.created||0,
+                   updatedAt:n.modified||0,wordCount:0,readingTime:0});
+  }
+  docs=out;
+}
 function changed(){
   $('#saved').textContent='…';clearTimeout(saveT);saveT=setTimeout(save,300);
   const s=stats(text());$('#stats').textContent=s.w+' mot'+(s.w>1?'s':'')+' · '+s.r+' min';
@@ -181,20 +267,54 @@ function changed(){
 function save(){
   if(!ready)return;const d=doc();if(!d)return;const t=text(),s=stats(t);
   Object.assign(d,{content:t,updatedAt:Date.now(),wordCount:s.w,readingTime:s.r});
-  indexUpsert(d);
+  indexUpsert(d);changedSinceOpen.add(cur);
+  /* Desktop : le .md est la source de vérité (écriture atomique côté Rust) ;
+     PWA : IndexedDB, avec repli localStorage inchangé. */
+  if(store&&store.supportsFolders){
+    store.write(cur,t).then(r=>{
+      knownMtime[cur]=r.mtime;diskMtime[cur]=r.mtime;
+      changedSinceOpen.delete(cur);
+      $('#saved').textContent='enregistré';
+    }).catch(e=>{$('#saved').textContent='échec : '+((e&&e.message)||e)});
+    return;
+  }
   sv('mwd:cur',cur);dbPut(d).then(()=>{$('#saved').textContent='enregistré'});
 }
 function open(id){
-  if(doc())save();cur=id;const d=doc();
-  ed.innerHTML='';act=null;d.content.split('\n').forEach(t=>ed.appendChild(mk(t)));
-  $('#scroll').scrollTop=0;
-  $('#title').value=d.title;ready=true;changed();sv('mwd:cur',cur);list();
+  if(doc())save();cur=id;
+  const paint=(title,content,mtime)=>{
+    ed.innerHTML='';act=null;String(content||'').split('\n').forEach(t=>ed.appendChild(mk(t)));
+    $('#scroll').scrollTop=0;
+    $('#title').value=title||'';
+    if(mtime!=null){knownMtime[id]=mtime;diskMtime[id]=mtime}
+    changedSinceOpen.delete(id);
+    ready=true;changed();sv('mwd:cur',cur);list();
+  };
+  /* Desktop : le contenu est lu à l'ouverture (§6.2) ; PWA : déjà en mémoire. */
+  if(store&&store.supportsFolders){
+    const d=doc();
+    /* Titre = nom du fichier SANS extension (invariant I6 : titre = nom de fichier).
+       On le capture AVANT le premier paint() : celui-ci vide #title, donc relire
+       $('#title').value ensuite renverrait une chaîne vide. */
+    const title=d?d.title:nameOf(findNode(id));
+    paint(title,'',null);
+    return store.read(id).then(r=>{
+      if(String(cur)!==String(id))return;/* l'utilisateur a changé d'avis */
+      paint(title,r.content,r.mtime);
+      const s=stats(r.content||'');
+      const d2=doc();
+      if(d2){d2.content=r.content;d2.wordCount=s.w;d2.readingTime=s.r;d2.updatedAt=r.mtime||d2.updatedAt}
+      indexUpsert({id:String(id),title:title,content:r.content,updatedAt:r.mtime});
+    }).catch(()=>{});
+  }
+  const d=doc();paint(d.title,d.content,d.updatedAt);
 }
 function create(title,content){
   const n=Date.now(),d={id:uid(),title:title||'',content:content||'',createdAt:n,updatedAt:n,wordCount:0,readingTime:0};
   docs.unshift(d);dbPut(d);indexUpsert(d);return d;
 }
 /* Modifications externes (desktop) : bandeau discret, jamais de fusion (spec §12.5) */
+
 function showConflict(id){
   const c=$('#conflict');if(!c)return;
   c.hidden=false;c.innerHTML='';
@@ -212,10 +332,13 @@ const nodeOf=d=>({id:d.id,name:d.title||'Sans titre',title:d.title||'Sans titre'
                   modified:d.updatedAt||0,created:d.createdAt||d.updatedAt||0,
                   size:stats(d.content||'').bytes,children:[]});
 const SearchIndex=(window.WDSEARCH||{}).SearchIndex;
-let search=null;
+let search=null,store=null;
 
+/* En desktop, #list affiche l'ARBORESCENCE du dossier de notes (§6.4).
+   En PWA, la liste plate est exactement celle d'avant : `list()` est inchangée. */
 function list(){
   const L=$('#list');L.innerHTML='';
+  if(store&&store.supportsFolders){buildTree();return}
   const sorted=sortNodes(docs.map(nodeOf),sortSpec);
   sorted.forEach(n=>{
     const d=docs.find(z=>z.id==n.id);if(!d)return;
@@ -228,8 +351,15 @@ function list(){
     x.onclick=()=>{
       if(x.dataset.s!='1'){x.dataset.s='1';x.textContent='sûr ?';x.style.width='auto';return}
       docs=docs.filter(z=>z!=d);
-      if(!docs.length)create('','');
       if(search)search.remove(d.id);
+      if(store&&store.supportsFolders){
+        store.remove(d.id).then(()=>store.list_tree()).then(t=>{
+          self_tree=t;list();
+          if(String(d.id)===String(cur)){cur=null;const f=firstNoteId();if(f)open(f)}
+        }).catch(e=>{$('#saved').textContent='échec : '+((e&&e.message)||e)});
+        return;
+      }
+      if(!docs.length)create('','');
       dbDel(d.id);if(d.id==cur){cur=null;open(docs[0].id)}else{reindex();list()}
     };
     r.append(b,x);L.appendChild(r);
@@ -262,6 +392,59 @@ function runSearch(){
     R.appendChild(b);
   });
 }
+/* ---------- Arborescence (desktop uniquement, §6.4) ---------- */
+const fold=new Set();
+const readFold=()=>{const f=ld('mwd:fold',null);if(Array.isArray(f))f.forEach(x=>fold.add(x))};
+function buildTree(){
+  const L=$('#list');if(!L)return;
+  L.innerHTML='';
+  const roots=sortNodes(self_tree.length?self_tree:docs.map(nodeOf),sortSpec);
+  const walk=(nodes,depth)=>{
+    nodes.forEach(n=>{
+      const id=toRel(n.path);
+      if(n.is_dir){
+        const d=document.createElement('div');d.className='row';
+        const b=document.createElement('button');b.className='tree-l';
+        const open=!fold.has(id);
+        b.innerHTML='<span class="tw">'+(open?'▾':'▸')+'</span><span class="nm">'+esc(n.name)+'</span>';
+        b.style.paddingLeft=(8+depth*14)+'px';
+        b.onclick=()=>{open?fold.add(id):fold.delete(id);sv('mwd:fold',[...fold]);list()};
+        d.appendChild(b);
+        const x=document.createElement('button');x.className='ib';x.textContent='×';x.style.width='28px';
+        x.onclick=()=>{
+          if(x.dataset.s!='1'){x.dataset.s='1';x.textContent='sûr ?';x.style.width='auto';return}
+          store.remove(id).then(()=>store.list_tree()).then(t=>{self_tree=t;list()});
+        };
+        d.append(x);L.appendChild(d);
+        if(open)walk(sortNodes(n.children||[],sortSpec),depth+1);
+        return;
+      }
+      const r=document.createElement('div');r.className='row';
+      const b=document.createElement('button');
+      b.className='tree-l'+(toRel(n.path)===cur?' cur':'');
+      b.innerHTML='<span class="tw"></span><span class="nm">'+esc(nameOf(n))+'</span><small>'+n.mtimeLabel+'</small>';
+      b.style.paddingLeft=(8+depth*14)+'px';
+      b.__id=toRel(n.path);
+      b.onclick=()=>{open(toRel(n.path));panel()};
+      r.appendChild(b);L.appendChild(r);
+    });
+  };
+  /* mtime lisible : la spec expose des ms epoch, l'interface veut « il y a 3 j ». */
+  const stamp=ms=>{
+    const d=Date.now()-ms;
+    if(d<60000)return"à l'instant";
+    if(d<3600000)return Math.floor(d/60000)+' min';
+    if(d<86400000)return Math.floor(d/3600000)+' h';
+    if(d<604800000)return Math.floor(d/86400000)+' j';
+    return new Date(ms).toLocaleDateString('fr-FR');
+  };
+  roots.forEach(r=>{r.mtimeLabel=stamp(r.modified||0)});
+  const mark=(nodes)=>nodes.forEach(n=>{mark(n.children||[]);n.mtimeLabel=stamp(n.modified||0)});
+  mark(roots);
+  walk(roots,0);
+}
+/* Tri de l'arborescence : `mtimeLabel` est calculé par buildTree, pas par sortNodes. */
+
 /* Masque les tris impossibles en PWA (pas de taille ni d'extension calculées) */
 /* Le <select> encode key:dir, mais le sens est aussi porté par #sortdir : on
    positionne l'option par KEY seulement, sinon value='' quand le sens stocké
@@ -320,8 +503,44 @@ $('#folderInput').onchange=e=>{
     r.readAsText(f);
   });
 };
-$('#title').addEventListener('input',e=>{const d=doc();if(!d)return;d.title=e.target.value.slice(0,255);indexUpsert(d);changed();list()});
-$('#bNew').onclick=()=>{if(doc())save();const d=create('','');open(d.id);panel();ed.focus()};
+/* Renommage : PWA = titre libre ; desktop = renommage du FICHIER, debounce 800 ms
+   (§6.3), jamais pendant la frappe d'un caractère composé. */
+let renameT;
+$('#title').addEventListener('input',e=>{
+  const d=doc();if(!d)return;
+  d.title=e.target.value.slice(0,255);
+  indexUpsert(d);changed();
+  if(!(store&&store.supportsFolders)){list();return}
+  clearTimeout(renameT);
+  const id=cur;
+  renameT=setTimeout(()=>{
+    if(e.isComposing)return;
+    store.rename(id,$('#title').value).then(r=>{
+      cur=String(r.id);d.id=String(r.id);
+      sv('mwd:cur',cur);
+      return store.list_tree();
+    }).then(t=>{self_tree=t;list()})
+      .catch(err=>{$('#saved').textContent='échec : '+((err&&err.message)||err)});
+  },800);
+});
+$('#bNew').onclick=()=>{
+  if(doc())save();
+  if(store&&store.supportsFolders){
+    const dir=cur&&cur.includes('/')?cur.slice(0,cur.lastIndexOf('/')):'';
+    store.create(dir,'Sans titre').then(r=>{
+      return store.list_tree().then(t=>{self_tree=t;list();return r.id});
+    }).then(id=>{open(String(id));panel();ed.focus()}).catch(e=>{$('#saved').textContent='échec : '+((e&&e.message)||e)});
+    return;
+  }
+  const d=create('','');open(d.id);panel();ed.focus();
+};
+/* Dossier : desktop uniquement (§6.4) */
+$('#bNewDir').onclick=()=>{
+  if(!store||!store.supportsFolders){$('#saved').textContent='disponible uniquement en version bureau';return}
+  const dir=cur&&cur.includes('/')?cur.slice(0,cur.lastIndexOf('/')):'';
+  store.create_dir(dir).then(r=>store.list_tree()).then(t=>{self_tree=t;list()})
+    .catch(e=>{$('#saved').textContent='échec : '+((e&&e.message)||e)});
+};
 
 /* ---------- Plan (ToC) ---------- */
 let tocT;
@@ -460,22 +679,121 @@ function buildAbout(){
 }
 $('#bAbout').onclick=()=>{buildAbout();panel('#about')};
 
+/* ---------- Fermeture : sauvegarde avant de quitter (§6.8) ---------- */
+if(window.__TAURI__&&window.__TAURI__.window){
+  const W=window.__TAURI__.window;
+  W.getCurrentWindow().onCloseRequested(async ev=>{
+    if(ev&&ev.preventDefault)ev.preventDefault();
+    save();
+    await new Promise(r=>setTimeout(r,120));
+    await W.getCurrentWindow().destroy();
+  });
+  /* Le desktop n'a pas de « pagehide » fiable : on enregistre aussi sur chaque frappe. */
+}
+
 /* ---------- Démarrage ---------- */
 {const t=ld('mwd:theme',null);if(t)document.documentElement.dataset.theme=t}
 (async()=>{
+  store=IS_DESKTOP?new TauriAdapter():new (window.WDSTORE.IdbAdapter)();
+  await store.init();
+  search=new SearchIndex(norm);
+  readSort();applySortUI();readFold();
+
+  if(IS_DESKTOP){
+    fsCapable=true;applySortUI();
+    /* Les contrôles de dossier n'existent qu'en desktop (I1 : la PWA reste telle quelle) */
+    $('#bNewDir').hidden=false;
+    [...$('#sort').options].forEach(o=>{if(o.dataset.fs)o.hidden=false});
+    if(!store.root){document.body.setAttribute('data-noroot','1');buildNoRoot();return}
+    self_tree=await store.list_tree();
+    syncDocsFromTree();
+    buildIndexFromTree();
+    open(cur&&existsId(cur)?cur:firstNoteId());
+    return;
+  }
+
+  /* PWA : IndexedDB, comportement inchangé */
   db=await idb();
   docs=(db?await dbAll():ld('mwd:docs',[]))||[];
   if(db&&!docs.length){const old=ld('mwd:docs',[]);if(old.length){docs=old;for(const d of old)await dbPut(d)}}
   docs.sort((a,b)=>b.updatedAt-a.updatedAt);
-  readSort();applySortUI();
-  /* L'index existe AVANT la création du document d'accueil : sinon celui-ci,
-     créé par create(), ne serait jamais indexé. */
-  search=new SearchIndex(norm);
   if(!docs.length)create('Bienvenue','# Bienvenue\n\nÉcrivez ici. Les **marqueurs** disparaissent, le *style* reste.\n\n> Une citation, un doute, une phrase à garder.\n\n## Premier chapitre\n\nTapez / pour ouvrir les commandes. Tout est enregistré sur cet appareil.');
   reindex();
   open(docs.find(d=>d.id==cur)?cur:docs[0].id);
 })();
 addEventListener('pagehide',save);
+
+/* ---------- Desktop : dossier de notes ---------- */
+/* Recherche en profondeur : un nœud peut être imbriqué (Projet/Deep.md). */
+function findNode(id){
+  const target=String(id==null?'':id);
+  let found=null;
+  const walk=ns=>{
+    for(const n of ns){
+      if(found)return true;
+      if(toRel(n.path)===target){found=n;return true}
+      if(walk(n.children||[]))return true;
+    }
+    return false;
+  };
+  walk(self_tree);
+  return found;
+}
+function existsId(id){return !!findNode(id)}
+/* Le premier FICHIER de l'arborescence. Rust renvoie `path` (absolu) ; l'id
+   côté web est le chemin RELATIF à la racine (invariant I6) : d'où toRel(). */
+function firstNoteId(){
+  const seen=[];
+  const walk=ns=>{
+    for(const n of ns){
+      seen.push(n);
+      if(!n.is_dir)return toRel(n.path);
+      if(n.children&&n.children.length){const r=walk(n.children);if(r)return r}
+    }
+    return null;
+  };
+  self_firstFile=walk(self_tree);
+  return self_firstFile;
+}
+let self_firstFile=null;
+/* Nom affiché d'un nœud : le titre est le nom du fichier moins son extension.
+   `n.path` est optionnel : en PWA les nœuds viennent de `nodeOf()` et n'ont pas
+   de chemin (le nom EST déjà le titre). */
+function nameOf(n){
+  if(!n)return '';
+  return String(n.name||'').replace(/\.(md|txt)$/i,'');
+}
+/* /racine/Projet/Deep.md -> Projet/Deep.md ; tolère les séparateurs Windows. */
+function toRel(path){
+  const root=(store&&store.root)||'';
+  let p=String(path||'').replace(/\\/g,'/');
+  const r=String(root).replace(/\\/g,'/').replace(/\/+$/,'');
+  if(r&&p.toLowerCase().startsWith(r.toLowerCase()+'/'))p=p.slice(r.length+1);
+  else if(r&&p.toLowerCase()===r.toLowerCase())p='';
+  return p;
+}
+/* L'index de recherche se construit en lisant les .md, par lots de 32 (§6.6). */
+async function buildIndexFromTree(){
+  const files=[];
+  const walk=ns=>ns.forEach(n=>{if(n.is_dir)walk(n.children||[]);else files.push(n)});
+  walk(self_tree);
+  syncDocsFromTree();
+  for(let i=0;i<files.length;i+=32){
+    const batch=files.slice(i,i+32);
+    const texts=await Promise.all(batch.map(n=>store.read(toRel(n.path)).then(r=>r.content).catch(()=>'')));
+    batch.forEach((n,j)=>search.update({id:toRel(n.path),title:nameOf(n),
+                                       content:texts[j]||'',updatedAt:n.modified||0}));
+  }
+  list();
+}
+function buildNoRoot(){
+  const L=$('#list');if(L)L.innerHTML='';
+  const d=document.createElement('div');d.style.padding='8px';
+  d.innerHTML='<p class="empty">Choisissez le dossier qui contient vos notes.</p>';
+  const b=document.createElement('button');b.className='act-b';b.textContent='Choisir le dossier de notes';
+  b.onclick=pickRootUI;d.appendChild(b);
+  $('#list').appendChild(d);
+}
 /* Scroll visible clavier mobile/Bluetooth — MutationObserver supprimé, keepCaret appliqué */
 function keepCaret(el){if(!el)return;/* scroll simple, sans observer */}
 poke();

@@ -109,6 +109,7 @@ select{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding
 <div id="scrim"></div>
 <aside id="docs" class="dr">
   <button class="act-b" id="bNew">+ Nouveau document</button>
+  <button class="act-b" id="bNewDir" data-fs hidden>+ Nouveau dossier</button>
   <input type="search" id="q" placeholder="Rechercher…" aria-label="Rechercher dans les documents" autocomplete="off">
   <div id="sortrow"><select id="sort" aria-label="Trier les documents"><option value="modified:desc">Modifié</option><option value="name:asc">Nom</option><option value="created:desc">Créé</option><option value="size:desc" data-fs>Taille</option><option value="ext:asc" data-fs>Extension</option></select><button class="ib" id="sortdir" aria-label="Inverser le tri" style="width:32px">↓</button></div>
   <div id="results" hidden></div>

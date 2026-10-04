@@ -24,11 +24,13 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 #![warn(missing_docs)]
 
+pub mod commands;
 pub mod config;
 pub mod names;
 pub mod notes;
 pub mod paths;
 pub mod selfwrites;
+pub mod watcher;
 
 use std::path::Path;
 use thiserror::Error;
