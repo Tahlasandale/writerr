@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="utf-8"><meta name="description" content="Writer Deck — application minimaliste d\'écriture concentrée sur mobile."><meta name="keywords" content="écriture, notes, minimaliste, mobile, writer deck"><meta name="author" content="Joseph Humbert"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta name="theme-color" content="#000000"><link rel="manifest" href="manifest.json">
+<meta charset="utf-8"><meta name="description" content="Writer Deck — application minimaliste d'écriture concentrée sur mobile."><meta name="keywords" content="écriture, notes, minimaliste, mobile, writer deck"><meta name="author" content="Joseph Humbert"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta name="theme-color" content="#000000"><link rel="icon" href="icon-192.png" type="image/png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="manifest" href="manifest.json">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Writer Deck</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
@@ -213,7 +213,7 @@ const CMD=[
   {n:'Titre 3',k:'h3 titre heading',i:'H3',h:'###',p:'### '},
   {n:'Liste à puces',k:'ul puce bullet liste',i:'•',h:'-',p:'- '},
   {n:'Liste numérotée',k:'ol numero liste',i:'1.',h:'1.',p:'1. '},
-  {n:'Case à cocher',k:'todo tache checkbox',i:'☐',h:'[ ]',p:'- [ ] '},
+  {n:'Case à cocher',k:'todo tache checkbox task',i:'☐',h:'[ ]',p:'- [ ] '},
   {n:'Citation',k:'quote',i:'❝',h:'>',p:'> '},
   {n:'Séparateur',k:'divider hr ligne',i:'—',h:'---',t:'hr'},
   {n:'Gras',k:'bold',i:'B',h:'**',t:'in',s:'**'},
@@ -271,7 +271,7 @@ sl.addEventListener('click',e=>{const b=e.target.closest('button');if(b)apply(cm
 $('#bSl').addEventListener('mousedown',e=>e.preventDefault());
 $('#bSl').onclick=()=>{
   const s=getSelection();let l=s.rangeCount&&s.anchorNode&&getLine(s.anchorNode);
-  if(!l){ed.focus();l=ed.lastElementChild;put(l,l.textContent.length)}
+  if(!l){ed.focus();l=ed.lastElementChild;if(!l)return;put(l,l.textContent.length)}/* avant le 1er rendu : aucune ligne */
   const p=l.textContent[off(l)-1];
   document.execCommand('insertText',false,(!p||/\s/.test(p)?'':' ')+'/');
 };
@@ -326,7 +326,7 @@ function list(){
     r.append(b,x);L.appendChild(r);
   });
 }
-$('#title').addEventListener('input',e=>{const d=doc();d.title=e.target.value.slice(0,255);changed();list()});
+$('#title').addEventListener('input',e=>{const d=doc();if(!d)return;d.title=e.target.value.slice(0,255);changed();list()});
 $('#bNew').onclick=()=>{if(doc())save();const d=create('','');open(d.id);panel();ed.focus()};
 
 /* ---------- Plan (ToC) ---------- */
@@ -356,7 +356,7 @@ $('#bTheme').onclick=()=>{
   const r=document.documentElement,dark=r.dataset.theme?r.dataset.theme=='dark':matchMedia('(prefers-color-scheme:dark)').matches;
   r.dataset.theme=dark?'light':'dark';sv('mwd:theme',r.dataset.theme);
 };
-$('#bFull').onclick=()=>{try{document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}catch(e){}};
+$('#bFull').onclick=()=>{try{const p=document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();if(p&&p.catch)p.catch(()=>{})}catch(e){}};
 function poke(){
   document.body.classList.remove('idle');clearTimeout(idleT);
   if(idleMs&&!$('#scrim').classList.contains('on'))idleT=setTimeout(()=>document.body.classList.add('idle'),idleMs);
