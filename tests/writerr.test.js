@@ -253,17 +253,44 @@ const want = n => !only || n.includes(only);
 
   /* ---------------- L. docs ---------------- */
   if (want('L')) {
+    const curId = () => page.evaluate(() => { const b = document.querySelector('#list .doc.cur'); return b && b.__id; });
+    const showList = async () => { await page.evaluate(() => document.querySelector('#bDocs').click()); await new Promise(r => setTimeout(r, 150)); };
+    // repartir d'un jeu de documents connu : on supprime tous les documents un par un
+    const wipe = async () => {
+      await showList();
+      let guard = 0;
+      while (await page.evaluate(() => document.querySelectorAll('#list .row').length) > 0 && guard++ < 30) {
+        await page.evaluate(() => {
+          const rows = [...document.querySelectorAll('#list .row')];
+          const r = rows.find(x => x.querySelector('.doc').classList.contains('cur')) || rows[0];
+          const b = r.querySelector('.ib'); b.click(); b.click();
+        });
+        await new Promise(r => setTimeout(r, 250));
+      }
+      await showList();
+    };
+
     await reset(page, ['# T', 'corps **g**', '- [x] fait']);
     await new Promise(r => setTimeout(r, 500));
     const DOC1 = join(await txt(page));
-    await page.evaluate(() => { document.querySelector('#bDocs').click(); document.querySelector('#bNew').click(); });
+    // la liste est triée : on cible le document par son ID, pas par sa position
+    const doc1Id = await curId();
+
+    await showList();
+    await page.evaluate(() => document.querySelector('#bNew').click());
     await new Promise(r => setTimeout(r, 250));
     await putCaret(page, 0, 0); await type(page, 'second doc');
     await new Promise(r => setTimeout(r, 500));
-    await page.evaluate(() => document.querySelectorAll('#list .doc')[1].click());
+
+    await showList();
+    await page.evaluate(id => {
+      const rows = [...document.querySelectorAll('#list .doc')];
+      const target = rows.find(b => b.__id === id);
+      (target || rows[0]).click();
+    }, doc1Id);
     await new Promise(r => setTimeout(r, 300));
     const back = join(await txt(page));
-    check('L1 switch back to doc 1', back === DOC1, { back, DOC1 });
+    check('L1 switch back to doc 1', back === DOC1, { back, DOC1, doc1Id });
     await page.evaluate(() => document.querySelector('#bDocs').click());
     await new Promise(r => setTimeout(r, 120));
     const before = await page.evaluate(() => document.querySelectorAll('#list .row').length);
@@ -347,6 +374,224 @@ const want = n => !only || n.includes(only);
     check('O3 malformed json import does not corrupt', badImport.docs >= 1, badImport);
   }
 
+  /* ---------------- T. tri, recherche, À propos, dossier ---------------- */
+  if (want('T')) {
+    const sortVal = () => page.evaluate(() => document.querySelector('#sort').value);
+    const showList = async () => { await page.evaluate(() => document.querySelector('#bDocs').click()); await new Promise(r => setTimeout(r, 150)); };
+    // repartir d'un jeu de documents connu : on supprime TOUS les documents.
+    // Dernier document Impossible à supprimer (l'app en recrée un), on le renomme.
+    const wipe = async () => {
+      await showList();
+      let guard = 0;
+      while (await page.evaluate(() => document.querySelectorAll('#list .row').length) > 1 && guard++ < 30) {
+        await page.evaluate(() => {
+          const rows = [...document.querySelectorAll('#list .row')];
+          const r = rows.find(x => x.querySelector('.doc').classList.contains('cur')) || rows[0];
+          const b = r.querySelector('.ib'); b.click(); b.click();
+        });
+        await new Promise(r => setTimeout(r, 250));
+      }
+      // le survivant : on le neutralise pour ne pas polluer les attentes
+      await page.evaluate(() => {
+        const cur = [...document.querySelectorAll('#list .doc')].find(b => b.classList.contains('cur'));
+        if (!cur) return;
+        cur.click();
+      });
+      await new Promise(r => setTimeout(r, 250));
+      await page.evaluate(() => {
+        const i = document.querySelector('#title');
+        i.value = 'zzzignore'; i.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await new Promise(r => setTimeout(r, 250));
+      await showList();
+    };
+    // titre utile = tout sauf le document neutre.
+    // Le bouton contient le titre PUIS un <small>« n m » : on lit le nœud texte
+    // du titre seul, sinon « note10 » se retrouve collé à « 3 m ».
+    const realTitles = () => page.evaluate(() =>
+      [...document.querySelectorAll('#list .doc')]
+        .map(b => [...b.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim())
+        .filter(t => t !== 'zzzignore'));
+
+    await wipe();
+
+    // jeu de documents : un par un via l'UI (bouton « + Nouveau document » + titre)
+    const addDoc = async (titre, contenu) => {
+      await page.evaluate(() => { document.querySelector('#bDocs').click(); });
+      await new Promise(r => setTimeout(r, 150));
+      await page.evaluate(() => document.querySelector('#bNew').click());
+      await new Promise(r => setTimeout(r, 300));
+      await page.evaluate(t => {
+        const inp = document.querySelector('#title');
+        inp.value = t;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+      }, titre);
+      if (contenu) {
+        await putCaret(page, 0, 0);
+        await type(page, contenu);
+      }
+      await page.evaluate(() => document.querySelector('#bDocs').click());
+      await new Promise(r => setTimeout(r, 200));
+    };
+
+    await addDoc('Zeta', 'premier contenu zzz');
+    await addDoc('Alpha', 'contenu de alpha');
+    await addDoc('Moyen', 'ici parle de algo');
+    await addDoc('Doc Algo', 'Algorithme de tri');
+    const titles = realTitles;
+    // le tri se pilote comme un utilisateur : choisir la clé, puis le sens
+    const setSort = async (key, dir) => {
+      await page.evaluate(k => {
+        const s = document.querySelector('#sort');
+        const o = [...s.options].find(x => x.value.split(':')[0] === k && !x.hidden);
+        if (!o) throw new Error('option de tri absente: ' + k);
+        s.value = o.value;
+        s.dispatchEvent(new Event('change', { bubbles: true }));
+      }, key);
+      await new Promise(r => setTimeout(r, 150));
+      const want = dir === 'asc' ? '↑' : '↓';
+      const cur = await page.evaluate(() => document.querySelector('#sortdir').textContent);
+      if (cur !== want) {
+        await page.evaluate(() => document.querySelector('#sortdir').click());
+        await new Promise(r => setTimeout(r, 150));
+      }
+    };
+
+    await showList();
+    await setSort('name', 'asc');
+    const byName = await titles();
+    check('T1 tri par nom', JSON.stringify(byName) === JSON.stringify(['Alpha', 'Doc Algo', 'Moyen', 'Zeta']), byName);
+
+    await setSort('name', 'desc');
+    const byNameDesc = await titles();
+    check('T2 tri inversé', JSON.stringify(byNameDesc) === JSON.stringify(['Zeta', 'Moyen', 'Doc Algo', 'Alpha']), byNameDesc);
+
+    // --- le tri persiste (clé ET sens)
+    await new Promise(r => setTimeout(r, 600));
+    await page.reload({ waitUntil: 'networkidle2' });
+    await new Promise(r => setTimeout(r, 600));
+    const persisted = await page.evaluate(() => ({ v: document.querySelector('#sort').value, d: document.querySelector('#sortdir').textContent }));
+    check('T3 tri conservé après rechargement', persisted.v.startsWith('name:') && persisted.d === '↓', persisted);
+    await showList();
+
+    // --- tri par nom naturel (note2 avant note10)
+    await wipe();
+    await addDoc('note10', 'a');
+    await addDoc('note2', 'b');
+    await addDoc('note1', 'c');
+    await showList();
+    await setSort('name', 'asc');
+    const nat = await titles();
+    check('T4 tri naturel (note2 < note10)', JSON.stringify(nat) === JSON.stringify(['note1', 'note2', 'note10']), nat);
+
+    // --- retour au jeu complet pour la recherche et le panneau À propos
+    await wipe();
+    await addDoc('Zeta', 'premier contenu zzz');
+    await addDoc('Alpha', 'contenu de alpha');
+    await addDoc('Moyen', 'ici parle de algo');
+    await addDoc('Doc Algo', 'Algorithme de tri');
+    await showList();
+
+    // --- recherche
+    await page.evaluate(() => { const q = document.querySelector('#q'); q.value = 'Algorithme'; q.dispatchEvent(new Event('input', { bubbles: true })); });
+    await new Promise(r => setTimeout(r, 200));
+    const res = await page.evaluate(() => ({
+      visible: !document.querySelector('#results').hidden,
+      listHidden: document.querySelector('#list').hidden,
+      titles: [...document.querySelectorAll('#results .res b')].map(b => b.textContent),
+      snippet: (document.querySelector('#results .res span') || {}).textContent || '',
+    }));
+    check('T5 recherche filtre et affiche un snippet', res.visible && res.listHidden && res.titles.includes('Doc Algo') && res.snippet.includes('Algo'), res);
+
+    // --- Échap vide la recherche
+    await page.evaluate(() => { const q = document.querySelector('#q'); q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    await new Promise(r => setTimeout(r, 150));
+    check('T6 Échap vide la recherche', await page.evaluate(() => document.querySelector('#q').value === '' && document.querySelector('#list').hidden === false), await page.evaluate(() => ({ v: document.querySelector('#q').value, lh: document.querySelector('#list').hidden })));
+
+    // --- recherche sans résultat
+    await page.evaluate(() => { const q = document.querySelector('#q'); q.value = 'zzzzintrouvable'; q.dispatchEvent(new Event('input', { bubbles: true })); });
+    await new Promise(r => setTimeout(r, 150));
+    check('T7 recherche sans résultat', await page.evaluate(() => document.querySelector('#results').textContent.includes('Aucun résultat')));
+
+    // --- cliquer un résultat ouvre le bon document
+    await page.evaluate(() => { const q = document.querySelector('#q'); q.value = 'Algorithme'; q.dispatchEvent(new Event('input', { bubbles: true })); });
+    await new Promise(r => setTimeout(r, 200));
+    await page.evaluate(() => document.querySelectorAll('#results .res')[0].click());
+    await new Promise(r => setTimeout(r, 300));
+    const opened = await page.evaluate(() => ({ t: document.querySelector('#title').value, panel: !document.querySelector('#docs').classList.contains('open') }));
+    check('T8 clic sur un résultat ouvre le document et ferme le tiroir', opened.t === 'Doc Algo' && opened.panel, opened);
+
+    // --- panneau À propos
+    await page.evaluate(() => document.querySelector('#bDocs').click());
+    await new Promise(r => setTimeout(r, 150));
+    await page.evaluate(() => document.querySelector('#bAbout').click());
+    await new Promise(r => setTimeout(r, 250));
+    const about = await page.evaluate(() => ({
+      open: document.querySelector('#about').classList.contains('open'),
+      docsClosed: !document.querySelector('#docs').classList.contains('open'),
+      text: document.querySelector('#aboutC').textContent,
+      links: [...document.querySelectorAll('#aboutC a')].map(a => a.getAttribute('href')),
+      version: document.querySelector('#aboutC b').textContent,
+      cmds: document.querySelectorAll('#aboutC div div').length,
+    }));
+    check('T9 panneau À propos ouvert, tiroir Documents fermé', about.open && about.docsClosed, about);
+    check('T10 liens GitHub corrects', about.links.includes('https://github.com/Tahlasandale/writerr') && about.links.includes('https://github.com/Tahlasandale/writerr/releases/latest') && about.links.includes('https://github.com/Tahlasandale/writerr/issues'), about.links);
+    check('T11 version affichée = WD_CONFIG', about.version === '0.1.0', about.version);
+    check('T12 raccourcis et commandes listés', /Entrée/.test(about.text) && /Titre 1/.test(about.text) && /Case à cocher/.test(about.text), about.text.slice(0, 200));
+    check('T13 aucun lien OWNER', !about.links.some(h => /OWNER/.test(h || '')), about.links);
+
+    // --- import d'un dossier de .md
+    const imported = await page.evaluate(() => new Promise(res => {
+      const dt = new DataTransfer();
+      // webkitRelativePath se définit sur le File, pas sur le FileItem du DataTransfer
+      const mk = (relPath, content, type) => {
+        const f = new File([content], relPath.split('/').pop(), { type: type || 'text/markdown' });
+        Object.defineProperty(f, 'webkitRelativePath', { value: relPath });
+        dt.items.add(f);
+      };
+      mk('Notes/racine.md', '# Racine');
+      mk('Notes/Sous/deep.md', 'du contenu');
+      mk('Notes/ignore.txt', 'ignoré', 'text/plain');
+      const fi = document.querySelector('#folderInput');
+      fi.files = dt.files;
+      fi.dispatchEvent(new Event('change', { bubbles: true }));
+      setTimeout(() => res({
+        titles: [...document.querySelectorAll('#list .doc')]
+          .map(b => [...b.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim()),
+      }), 1400);
+    }));
+    // on isole les titres ajoutés par cet import (le document neutre existe déjà)
+    const added = imported.titles.filter(t => ['racine', 'Sous / deep', 'ignore', 'Notes / racine'].includes(t));
+    check('T14 import de dossier : .md seulement, racine omise, sous-dossier dans le titre',
+      added.includes('racine')
+      && added.includes('Sous / deep')
+      && !added.includes('ignore')        /* le .txt est ignoré */
+      && !added.includes('Notes / racine')/* la racine n'est pas dans le titre */
+      && !added.some(t => /\.md$/i.test(t)),/* extension retirée */
+      { added, all: imported.titles });
+
+    // --- le document importé est recherchable PAR SON CONTENU (« # Racine »)
+    const found = await page.evaluate(() => new Promise(res => {
+      const q = document.querySelector('#q');
+      q.value = 'Racine';
+      q.dispatchEvent(new Event('input', { bubbles: true }));
+      setTimeout(() => res([...document.querySelectorAll('#results .res b')].map(b => b.textContent)), 300);
+    }));
+    check('T15 document importé trouvé par son contenu', found.some(t => /racine/i.test(t)), found);
+
+    // --- et par son titre de fichier
+    const byPath = await page.evaluate(() => new Promise(res => {
+      const q = document.querySelector('#q');
+      q.value = 'Sous'; q.dispatchEvent(new Event('input', { bubbles: true }));
+      setTimeout(() => res([...document.querySelectorAll('#results .res b')].map(b => b.textContent)), 300);
+    }));
+    check('T16 document importé trouvé par un mot de son chemin de dossier', byPath.some(t => /deep/.test(t)), byPath);
+
+    await page.evaluate(() => { const q = document.querySelector('#q'); q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.evaluate(() => document.querySelector('#scrim').click());
+    await new Promise(r => setTimeout(r, 150));
+  }
+
   /* ---------------- P. escape then leave / re-enter the token ---------------- */
   if (want('P')) {
     await reset(page, ['abc']); await putCaret(page, 0, 3); await type(page, ' /h');
@@ -408,4 +653,4 @@ const want = n => !only || n.includes(only);
   await browser.close();
   await server.close();
   process.exitCode = (bad.length || errs.length) ? 1 : 0;
-})().catch(async e => { console.error('FATAL', e); if (server) await server.close(); process.exit(1); });
+})().catch(async e => { console.error('FATAL', e); if (globalThis.__wdServer) await globalThis.__wdServer.close(); process.exit(1); });

@@ -1,0 +1,25 @@
+[package]
+name = "writer-deck"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Writer Deck — coeur Rust : noms, chemins, notes, configuration, anti-boucle"
+license = "MIT"
+publish = false
+
+[lib]
+name = "writer_deck"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+dirs = "7"
+# `notify` est reserve au module `watcher` (stage S6) ; `selfwrites` fournit
+# deja l'anti-boucle dont il aura besoin.
+notify = "8"
+trash = "5"
+
+[dev-dependencies]
+tempfile = "3"

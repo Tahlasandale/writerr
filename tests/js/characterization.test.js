@@ -105,9 +105,13 @@ test('slug : nom de fichier sûr', () => {
   assert.equal(WD.slug('x'.repeat(100)).length, 60);
 });
 
-test('stats : comptage de mots et temps de lecture', () => {
-  assert.deepEqual(WD.stats(''), { w: 0, r: 0 });
-  assert.deepEqual(WD.stats('   \n  '), { w: 0, r: 0 });
+test('stats : comptage de mots, temps de lecture et taille en octets', () => {
+  // `bytes` a été ajouté après le refactor (tri par taille) : il ne casse pas I1
+  assert.deepEqual(WD.stats(''), { w: 0, r: 0, bytes: 0 });
+  assert.deepEqual(WD.stats('   \n  '), { w: 0, r: 0, bytes: 6 });
+  assert.equal(WD.stats('é').bytes, 2, 'accents comptés en UTF-8');
+  assert.equal(WD.stats('abc').bytes, 3);
+  assert.equal(WD.stats('😀').bytes, 4, 'astral : 4 octets');
   assert.equal(WD.stats('un deux trois').w, 3);
   assert.equal(WD.stats('**gras** et *ital*').w, 3);
   assert.equal(WD.stats('# Titre\n\n> cite').w, 2);

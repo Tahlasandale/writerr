@@ -181,6 +181,7 @@ function changed(){
 function save(){
   if(!ready)return;const d=doc();if(!d)return;const t=text(),s=stats(t);
   Object.assign(d,{content:t,updatedAt:Date.now(),wordCount:s.w,readingTime:s.r});
+  indexUpsert(d);
   sv('mwd:cur',cur);dbPut(d).then(()=>{$('#saved').textContent='enregistré'});
 }
 function open(id){
@@ -191,26 +192,135 @@ function open(id){
 }
 function create(title,content){
   const n=Date.now(),d={id:uid(),title:title||'',content:content||'',createdAt:n,updatedAt:n,wordCount:0,readingTime:0};
-  docs.unshift(d);dbPut(d);return d;
+  docs.unshift(d);dbPut(d);indexUpsert(d);return d;
 }
+/* Modifications externes (desktop) : bandeau discret, jamais de fusion (spec §12.5) */
+function showConflict(id){
+  const c=$('#conflict');if(!c)return;
+  c.hidden=false;c.innerHTML='';
+  const mk=(t,f)=>{const b=document.createElement('button');b.textContent=t;b.onclick=f;c.appendChild(b)};
+  mk('Modifié ailleurs',()=>{const r=reconcile({dirty:true,knownMtime:knownMtime[id],diskMtime:diskMtime[id]});
+    if(r==='reload')open(id);c.hidden=true});
+  mk('Recharger',()=>{open(id);c.hidden=true});
+  mk('Garder',()=>{diskMtime[id]=knownMtime[id];c.hidden=true});
+}
+const knownMtime={},diskMtime={};
+/* ---------- Tri, recherche, arborescence ---------- */
+let sortSpec={key:'modified',dir:'desc'};
+const readSort=()=>{const s=ld('mwd:sort',null);if(s&&s.key)sortSpec={key:s.key,dir:s.dir||'desc'}};
+const nodeOf=d=>({id:d.id,name:d.title||'Sans titre',title:d.title||'Sans titre',is_dir:false,
+                  modified:d.updatedAt||0,created:d.createdAt||d.updatedAt||0,
+                  size:stats(d.content||'').bytes,children:[]});
+const SearchIndex=(window.WDSEARCH||{}).SearchIndex;
+let search=null;
+
 function list(){
   const L=$('#list');L.innerHTML='';
-  docs.forEach(d=>{
+  const sorted=sortNodes(docs.map(nodeOf),sortSpec);
+  sorted.forEach(n=>{
+    const d=docs.find(z=>z.id==n.id);if(!d)return;
     const r=document.createElement('div');r.className='row';
     const b=document.createElement('button');b.className='doc'+(d.id==cur?' cur':'');
     b.innerHTML=esc(d.title||'Sans titre')+'<small>'+d.wordCount+' m</small>';
+    b.__id=d.id;/* exposé pour les tests et le débogage */
     b.onclick=()=>{open(d.id);panel()};
     const x=document.createElement('button');x.className='ib';x.textContent='×';x.style.width='32px';
     x.onclick=()=>{
       if(x.dataset.s!='1'){x.dataset.s='1';x.textContent='sûr ?';x.style.width='auto';return}
       docs=docs.filter(z=>z!=d);
       if(!docs.length)create('','');
-      dbDel(d.id);if(d.id==cur){cur=null;open(docs[0].id)}else list();
+      if(search)search.remove(d.id);
+      dbDel(d.id);if(d.id==cur){cur=null;open(docs[0].id)}else{reindex();list()}
     };
     r.append(b,x);L.appendChild(r);
   });
 }
-$('#title').addEventListener('input',e=>{const d=doc();if(!d)return;d.title=e.target.value.slice(0,255);changed();list()});
+function reindex(){
+  if(!search)return;
+  docs.forEach(d=>search.update({id:d.id,title:d.title,content:d.content||'',updatedAt:d.updatedAt||0}));
+}
+/* Mise à jour ciblée : la recherche doit voir les documents dès leur création,
+   leur renommage et chaque frappe — sans reconstruire l'index à chaque fois. */
+function indexUpsert(d){
+  if(!search||!d)return;
+  search.update({id:d.id,title:d.title,content:d.content||'',updatedAt:d.updatedAt||0});
+}
+function runSearch(){
+  const q=$('#q').value.trim();
+  const R=$('#results'),L=$('#list');
+  if(!q){R.hidden=true;R.innerHTML='';L.hidden=false;return}
+  if(!search){R.hidden=false;L.hidden=true;R.innerHTML='<p class="empty">Index en cours…</p>';return}
+  const hits=search.query(q,{limit:30});
+  R.hidden=false;L.hidden=true;
+  if(!hits.length){R.innerHTML='<p class="empty">Aucun résultat.</p>';return}
+  R.innerHTML='';
+  hits.forEach(h=>{
+    const b=document.createElement('button');
+    b.className='res'+(h.id==cur?' cur':'');
+    b.innerHTML='<b>'+esc(h.title||'Sans titre')+'</b><span>'+esc(h.snippet||'')+'</span>';
+    b.onclick=()=>{open(h.id);panel()};
+    R.appendChild(b);
+  });
+}
+/* Masque les tris impossibles en PWA (pas de taille ni d'extension calculées) */
+/* Le <select> encode key:dir, mais le sens est aussi porté par #sortdir : on
+   positionne l'option par KEY seulement, sinon value='' quand le sens stocké
+   diffère du sens par défaut de l'option. */
+function applySortUI(){
+  const s=$('#sort');
+  const avail=[...s.options].filter(o=>!o.dataset.fs||fsCapable);
+  if(!avail.some(o=>o.value.split(':')[0]===sortSpec.key)){
+    const fb=avail.find(o=>o.value.split(':')[0]==='modified')||avail[0];
+    if(fb)sortSpec={key:fb.value.split(':')[0],dir:sortSpec.dir};
+  }
+  const o=avail.find(x=>x.value.split(':')[0]===sortSpec.key);
+  if(o)s.value=o.value;
+  $('#sortdir').textContent=sortSpec.dir==='asc'?'↑':'↓';
+}
+let fsCapable=false;/* PWA : taille/extension indisponibles (l'adaptateur FS les fournira) */
+$('#sort').addEventListener('change',e=>{
+  const [k,d]=e.target.value.split(':');
+  sortSpec={key:k,dir:d||'desc'};sv('mwd:sort',sortSpec);applySortUI();list();
+});
+$('#sortdir').onclick=()=>{
+  sortSpec={key:sortSpec.key,dir:sortSpec.dir==='asc'?'desc':'asc'};
+  sv('mwd:sort',sortSpec);applySortUI();list();
+};
+$('#q').addEventListener('input',runSearch);
+$('#q').addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();$('#q').value='';runSearch()}});
+/* Import d'un dossier de .md : chaque fichier devient un document, les sous-dossiers
+   deviennent « Dossier / fichier ». Un seul tour, sans surveillance. */
+$('#bImpDir').onclick=()=>$('#folderInput').click();
+$('#folderInput').onchange=e=>{
+  /* Le bouton annonce « un dossier de .md » : on ne prend donc QUE les .md.
+     Les .txt du dossier sont ignorés (l'import .txt unitaire reste disponible). */
+  const files=[...e.target.files].filter(f=>/\.md$/i.test(f.name));
+  e.target.value='';
+  if(!files.length){$('#saved').textContent='aucun .md trouvé';return}
+  save();
+  let pending=files.length,last=null;
+  files.forEach(f=>{
+    const r=new FileReader();
+    r.onload=()=>{
+      const rel=(f.webkitRelativePath||f.name).split('/').filter(Boolean);
+      rel.shift();/* le dossier racine choisi n'est pas dans le titre */
+      const name=f.name.replace(/\.md$/i,'');
+      /* rel = le chemin APRÈS le dossier racine (racine retirée) : s'il reste des
+   segments, ce sont des sous-dossiers → « Sous / deep ». Sinon le nom seul. */
+      const title=rel.length>1?rel.slice(0,-1).join(' / ')+' / '+name:name;
+      const d=create(title,String(r.result||'').replace(/\r/g,''));
+      const s=stats(d.content);
+      d.wordCount=s.w;d.readingTime=s.r;
+      /* Le contenu arrive APRÈS create() : on réindexe avec le texte complet,
+         sinon le document importé resterait introuvable par la recherche. */
+      indexUpsert(d);
+      dbPut(d).then(()=>{if(--pending)return;reindex();list();open(last.id);panel()});
+      last=d;
+    };
+    r.readAsText(f);
+  });
+};
+$('#title').addEventListener('input',e=>{const d=doc();if(!d)return;d.title=e.target.value.slice(0,255);indexUpsert(d);changed();list()});
 $('#bNew').onclick=()=>{if(doc())save();const d=create('','');open(d.id);panel();ed.focus()};
 
 /* ---------- Plan (ToC) ---------- */
@@ -230,7 +340,7 @@ function buildToc(){
 
 /* ---------- Panneaux, thème, plein écran, masquage ---------- */
 function panel(id){
-  ['#docs','#toc'].forEach(s=>$(s).classList.toggle('open',s==id));
+  ['#docs','#toc','#about'].forEach(s=>$(s).classList.toggle('open',s==id));
   $('#scrim').classList.toggle('on',!!id);poke();
 }
 $('#bDocs').onclick=()=>{list();panel('#docs')};
@@ -276,6 +386,80 @@ $('#file').onchange=e=>{
   r.readAsText(f);
 };
 
+/* ---------- Panneau « À propos & téléchargements » ---------- */
+const LABEL={repo:'Code source sur GitHub',latest:'Télécharger la dernière version',releases:'Toutes les versions',issues:'Signaler un problème'};
+let deferredInstall=null;
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e});
+function isDesktop(){return !!window.__TAURI__}
+function openOut(url,disabled){
+  if(disabled){$('#saved').textContent='dépôt non configuré';return}
+  if(isDesktop()){
+    try{invoke('open_external',{url})}catch(_){}
+  }else window.open(url,'_blank','noopener noreferrer');
+}
+/* Un lien du panneau À propos : <a href="…"> pour être réellement cliquable et
+   copiable, tout en interceptant le clic pour le desktop (invoke) et la CSP
+   (fenêtre externe). Sans interception, Tauri refuse la navigation. */
+function link(url,label,disabled){
+  const a=document.createElement('a');
+  a.href=disabled?'#':url;
+  a.target=disabled?null:'_blank';
+  if(!disabled)a.rel='noopener noreferrer';
+  a.textContent=label;
+  if(disabled)a.setAttribute('aria-disabled','true');
+  a.onclick=e=>{
+    e.preventDefault();
+    if(disabled){$('#saved').textContent='dépôt non configuré';return}
+    if(isDesktop()){try{invoke('open_external',{url})}catch(_){}}
+    else window.open(url,'_blank','noopener noreferrer');
+  };
+  return a;
+}
+function buildAbout(){
+  const cfg=window.WD_CONFIG||{repo:'',version:'0.0.0'},L=aboutLinks(cfg),C=$('#aboutC');
+  C.innerHTML='';
+  const h=document.createElement('h4');h.style.marginTop='0';h.textContent='Writer Deck';C.appendChild(h);
+  const p=document.createElement('p');p.textContent='Écriture concentrée, sans distraction.';C.appendChild(p);
+  const v=document.createElement('p');v.innerHTML='Version <b>'+esc(cfg.version||'—')+'</b>'+(isDesktop()?' (bureau)':' (web)');
+  v.style.color='var(--mut)';C.appendChild(v);
+  if(L.placeholder){
+    const w=document.createElement('p');w.style.color='var(--mut)';
+    w.textContent='Dépôt non configuré : renseignez web/config.js.';C.appendChild(w);
+  }
+  /* Une entrée = un <div> (marge) contenant le <a> ; pour « latest », la phrase
+   d'aide est un second <p> DANS ce même div. Si les deux sont des arguments
+   séparés de appendChild, le second atterrit à la racine du panneau. */
+  const row=t=>{
+    const d=document.createElement('div');d.style.margin='10px 0';
+    d.appendChild(link(L[t],LABEL[t],L.placeholder));
+    if(t==='latest'){
+      const s=document.createElement('p');
+      s.style.color='var(--mut)';
+      s.textContent=assetHint(detectPlatform(navigator.userAgent));
+      d.appendChild(s);
+    }
+    return d;
+  };
+  ['repo','latest','releases','issues'].forEach(t=>C.appendChild(row(t)));
+  if(!isDesktop()){
+    const b=document.createElement('button');b.className='act-b';b.textContent="Installer l'application web";
+    b.hidden=!deferredInstall;
+    b.onclick=()=>{if(deferredInstall){deferredInstall.prompt();deferredInstall=null;b.hidden=true}};
+    C.appendChild(b);
+  }
+  const kh=document.createElement('h5');kh.textContent='Raccourcis';C.appendChild(kh);
+  const ul=document.createElement('div');
+  [['/', 'commandes'],['Entrée', 'nouvelle ligne / sortie de liste'],['Tab', 'indenter'],['⇧Tab', 'désindenter'],['Échap', 'fermer le menu']].forEach(([k,v])=>{
+    const r=document.createElement('div');r.innerHTML='<kbd>'+esc(k)+'</kbd> '+esc(v);ul.appendChild(r);
+  });
+  C.appendChild(ul);
+  const ch=document.createElement('h5');ch.textContent='Commandes « / »';C.appendChild(ch);
+  const cl=document.createElement('div');
+  CMD.forEach(c=>{const r=document.createElement('div');r.innerHTML='/ <b>'+esc(c.n)+'</b>'+(c.h?' <kbd>'+esc(c.h)+'</kbd>':'');cl.appendChild(r)});
+  C.appendChild(cl);
+}
+$('#bAbout').onclick=()=>{buildAbout();panel('#about')};
+
 /* ---------- Démarrage ---------- */
 {const t=ld('mwd:theme',null);if(t)document.documentElement.dataset.theme=t}
 (async()=>{
@@ -283,7 +467,12 @@ $('#file').onchange=e=>{
   docs=(db?await dbAll():ld('mwd:docs',[]))||[];
   if(db&&!docs.length){const old=ld('mwd:docs',[]);if(old.length){docs=old;for(const d of old)await dbPut(d)}}
   docs.sort((a,b)=>b.updatedAt-a.updatedAt);
+  readSort();applySortUI();
+  /* L'index existe AVANT la création du document d'accueil : sinon celui-ci,
+     créé par create(), ne serait jamais indexé. */
+  search=new SearchIndex(norm);
   if(!docs.length)create('Bienvenue','# Bienvenue\n\nÉcrivez ici. Les **marqueurs** disparaissent, le *style* reste.\n\n> Une citation, un doute, une phrase à garder.\n\n## Premier chapitre\n\nTapez / pour ouvrir les commandes. Tout est enregistré sur cet appareil.');
+  reindex();
   open(docs.find(d=>d.id==cur)?cur:docs[0].id);
 })();
 addEventListener('pagehide',save);
