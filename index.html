@@ -104,7 +104,7 @@ const ld=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse
 const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const uid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c=='x'?r:r&3|8).toString(16)});
 const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-let docs=[],cur=ld('mwd:cur',null),act=null,saveT,idleT,idleMs=ld('mwd:idle',6000),db=null;
+let docs=[],cur=ld('mwd:cur',null),act=null,saveT,idleT,idleMs=ld('mwd:idle',6000),db=null,ready=false;
 
 /* ---------- IndexedDB (repli localStorage si indisponible) ---------- */
 const idb=()=>new Promise(res=>{try{
@@ -288,14 +288,14 @@ function changed(){
   clearTimeout(tocT);tocT=setTimeout(buildToc,250);
 }
 function save(){
-  const d=doc();if(!d)return;const t=text(),s=stats(t);
+  if(!ready)return;const d=doc();if(!d)return;const t=text(),s=stats(t);
   Object.assign(d,{content:t,updatedAt:Date.now(),wordCount:s.w,readingTime:s.r});
   sv('mwd:cur',cur);dbPut(d).then(()=>{$('#saved').textContent='enregistré'});
 }
 function open(id){
   if(doc())save();cur=id;const d=doc();
   ed.innerHTML='';act=null;d.content.split('\n').forEach(t=>ed.appendChild(mk(t)));
-  $('#title').value=d.title;changed();sv('mwd:cur',cur);list();
+  $('#title').value=d.title;ready=true;changed();sv('mwd:cur',cur);list();
 }
 function create(title,content){
   const n=Date.now(),d={id:uid(),title:title||'',content:content||'',createdAt:n,updatedAt:n,wordCount:0,readingTime:0};
