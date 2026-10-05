@@ -1,6 +1,6 @@
 {
   "name": "writerr",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Writer Deck — écriture concentrée, éditeur Markdown WYSIWYG mono-fichier (PWA + desktop Tauri)",
   "scripts": {
