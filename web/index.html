@@ -76,7 +76,10 @@ kbd{background:var(--bd);border-radius:4px;padding:0 4px;font-size:11px}
 #docs{left:0;border-right-width:1px;transform:translateX(-101%)}
 #toc{right:0;border-left-width:1px;transform:translateX(101%)}
 #about{left:0;border-right-width:1px;transform:translateX(-101%)}
-.dr.open{transform:none}
+/* Spécificité : les règles fermées ciblent un id (1,0,0), donc `.dr.open` (0,2,0)
+   ne les surclassait pas — les tiroirs restaient hors écran même avec .open.
+   L'état ouvert doit donc cibler les id aussi. */
+#docs.open,#toc.open,#about.open{transform:none}
 #scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9;display:none}
 #scrim.on{display:block}
 .dr h4{margin:18px 0 6px;color:var(--mut);font-weight:400}
@@ -131,7 +134,6 @@ select{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding
 </aside>
 <aside id="toc" class="dr"><h4 style="margin-top:0">Plan</h4><div id="tocList"></div></aside>
 <aside id="about" class="dr"><div id="aboutC"></div></aside>
-<aside id="toc" class="dr"><h4 style="margin-top:0">Plan</h4><div id="tocList"></div></aside>
 
 <script src="config.js"></script>
 <script src="lib.js"></script>

@@ -728,6 +728,94 @@ const want = n => !only || n.includes(only);
     await p3.close();
   }
 
+
+  /* ---------------- V. intégrité du balisage ---------------- */
+  if (want('V')) {
+    const dups = () => {
+      const seen = new Map();
+      document.querySelectorAll('[id]').forEach(el => {
+        seen.set(el.id, (seen.get(el.id) || 0) + 1);
+      });
+      return [...seen].filter(([, n]) => n > 1).map(([id, n]) => ({ id, n }));
+    };
+    const domDup = await page.evaluate(dups);
+    check('V1 aucun id dupliqué dans le DOM', domDup.length === 0, domDup);
+
+    // Même vérification sur la SOURCE, avant tout script : un id dupliqué introduit
+    // par une édition du balisage est attrapé ici, pas au runtime.
+    const srcDup = await page.evaluate(async () => {
+      const html = await (await fetch(location.href)).text();
+      const ids = Array.from(html.matchAll(/\sid="([^"]+)"/g)).map(m => m[1]);
+      const seen = new Map();
+      ids.forEach(id => seen.set(id, (seen.get(id) || 0) + 1));
+      return Array.from(seen).filter(([, n]) => n > 1).map(([id, n]) => ({ id, n }));
+    });
+    check('V2 aucun id dupliqué dans index.html', srcDup.length === 0, srcDup);
+
+    const drawers = await page.evaluate(() => ({
+      about: document.querySelectorAll('#about').length,
+      aboutC: document.querySelectorAll('#aboutC').length,
+      toc: document.querySelectorAll('#toc').length,
+      tocList: document.querySelectorAll('#tocList').length,
+    }));
+    check('V3 tiroirs #toc et #about présents une seule fois',
+      drawers.about === 1 && drawers.aboutC === 1 && drawers.toc === 1 && drawers.tocList === 1, drawers);
+
+    // et le plan se construit bien dans le tiroir visible
+    await reset(page, ['# Titre', 'du texte']);
+    await new Promise(r => setTimeout(r, 400));
+    await page.click('#bToc');
+    // le tiroir a une transition de 250 ms : on attend qu'elle soit finie, sinon
+    // getBoundingClientRect lit une position intermediaire
+    await new Promise(r => setTimeout(r, 450));
+    const toc = await page.evaluate(() => {
+      const el = document.querySelector('#toc');
+      const r = el.getBoundingClientRect();
+      return {
+        open: el.classList.contains('open'),
+        entries: document.querySelectorAll('#tocList .t').length,
+        onScreen: r.left < window.innerWidth && r.right > 0,
+      };
+    });
+    check("V4 le plan s'affiche dans le bon tiroir", toc.open && toc.entries === 1 && toc.onScreen, toc);
+    await page.evaluate(() => document.querySelector('#scrim').click());
+    await new Promise(r => setTimeout(r, 150));
+    // V5 : le vrai garde-fou. Vérifier la classe `.open` ne suffit pas — un tiroir
+    // peut porter la classe et rester hors écran si le CSS ne l'ouvre pas. C'est
+    // exactement le cas ici : `#toc{transform:…}` (1,0,0) battait `.dr.open`
+    // (0,2,0), donc AUCUN tiroir ne s'ouvrait depuis le commit d'origine.
+    const drawerBox = async (sel, open) => {
+      await page.evaluate(o => {
+        const el = document.querySelector(o.sel);
+        el.classList.toggle('open', o.open);
+        // le tiroir est piloté par panel() ; on le force pour tester la géométrie
+        document.querySelector(o.scrim).classList.toggle('on', o.open);
+      }, { sel, open, scrim: '#scrim' });
+      await new Promise(r => setTimeout(r, 450));   // transition .dr = 250 ms
+      return page.evaluate(s => {
+        const r = document.querySelector(s).getBoundingClientRect();
+        return {
+          left: Math.round(r.left), right: Math.round(r.right),
+          width: Math.round(r.width), vw: window.innerWidth,
+        };
+      }, sel);
+    };
+
+    for (const [sel, btn] of [['#docs', '#bDocs'], ['#toc', '#bToc'], ['#about', '#bAbout']]) {
+      const closed = await drawerBox(sel, false);
+      const opened = await drawerBox(sel, true);
+      const visibleWhenOpen = opened.left < opened.vw && opened.right > 0 && opened.width > 0;
+      const hiddenWhenClosed = closed.right <= 0 || closed.left >= closed.vw;
+      check('V5 ' + sel + ' visible une fois ouvert, hors écran une fois fermé',
+        visibleWhenOpen && hiddenWhenClosed, { closed, opened, btn });
+    }
+    await page.evaluate(() => {
+      document.querySelectorAll('.dr').forEach(el => el.classList.remove('open'));
+      document.querySelector('#scrim').classList.remove('on');
+    });
+    await new Promise(r => setTimeout(r, 150));
+  }
+
   /* ---------------- P. escape then leave / re-enter the token ---------------- */
   if (want('P')) {
     await reset(page, ['abc']); await putCaret(page, 0, 3); await type(page, ' /h');
