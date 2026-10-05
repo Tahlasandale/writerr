@@ -76,6 +76,30 @@ jobs:
           releaseDraft: true
           args: --features app --bundles appimage,deb,rpm
 
+      # tauri-cli pousse inconditionnellement `libgtk-3-0` dans le Depends:
+      # (src/interface/rust.rs, lignes 1422-1423) — nom qui n'existe plus sur
+      # Debian 13 / Ubuntu 24.04+, où GTK3 est devenu `libgtk-3-0t64`. Le .deb
+      # produit est donc ININSTALLABLE sur ces systèmes. On réécrit le fichier de
+      # contrôle et on réécrase l'asset. Voir .github/scripts/fix-deb-deps.sh.
+      - name: corriger la dépendance GTK3 du .deb
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          deb=$(find "$GITHUB_WORKSPACE" -name '*.deb' -not -path '*/node_modules/*' | head -1)
+          if [ -z "$deb" ]; then
+            echo "aucun .deb produit — tauri-action a-t-il bundlé ?"
+            find "$GITHUB_WORKSPACE" -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' | head
+            exit 1
+          fi
+          echo "paquet à corriger : $deb"
+          .github/scripts/fix-deb-deps.sh "$deb"
+          # --clobber : l'asset déjà téléversé par tauri-action porte la
+          # mauvaise dépendance, il faut le remplacer.
+          gh release upload "$TAG" "$deb" --clobber -R "$GITHUB_REPOSITORY"
+          echo "asset réécrasé avec un Depends: installable"
+
   smoke:
     name: le binaire compile et les tests passent
     runs-on: ubuntu-latest
