@@ -6,12 +6,13 @@
 //! `cargo test` de tourner **sans** GTK/WebKit (le binaire est derrière le
 //! feature `app`).
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tauri::Emitter;
 use tauri::Manager; // state(), manage(), get_webview_window()
+use tauri_plugin_dialog::DialogExt; // app.dialog().file()
+use tauri_plugin_opener::OpenerExt; // app.opener().open_url()
 
 use writer_deck::commands::{self, Ctx};
 use writer_deck::notes::{SystemTrasher, TreeNode};
@@ -29,6 +30,19 @@ struct App {
 /// Erreur interne : un verrou empoisonné signifie qu'un panic a eu lieu ailleurs.
 fn poisoned() -> commands::Err_ {
     commands::Err_::from(FsError::Io("verrou interne empoisonné".to_owned()))
+}
+
+/// Traduit l'erreur d'un plugin (`dialog`, `opener`) dans la même enveloppe
+/// `{code, message}` que le reste : le JS ne voit ainsi qu'une seule forme
+/// d'échec, quelle que soit sa source.
+fn plugin_failed(action: &str, err: impl std::fmt::Display) -> commands::Err_ {
+    commands::Err_ {
+        ok: false,
+        // Le même code qu'un `FsError::Io` : c'est le plugin qui a échoué, pas le
+        // disque — et le JS n'a ainsi qu'une forme d'erreur à traiter.
+        code: "io".to_owned(),
+        message: format!("{action} : {err}"),
+    }
 }
 
 /// `&App` et non `&State<'_, App>` : `State` porte DEUX durees de vie (celle du
@@ -76,18 +90,21 @@ fn start_watcher(app: &tauri::AppHandle) {
  * Les fonctions de `commands` sont pures et prennent `&Ctx`. Tauri, lui, n'accepte
  * qu'un `State<'_, T>` : ces wrappers font la traduction. Toute la logique testable
  * reste dans `commands` (tests/commands.rs) ; ces wrappers ne font que déballer.
+ *
+ * ATTENTION : le nom de la commande vue par le JS est le nom de la fonction
+ * (`#[tauri::command]` ne retire aucun préfixe). Ces wrappers portent donc le nom
+ * EXACT que le JS invoque (§5.11), et ceux de `commands` sont tous appelés
+ * `commands::…` : aucun préfixe n'est nécessaire pour les distinguer.
  * ------------------------------------------------------------------ */
 
 #[tauri::command]
-fn cmd_list_tree(
-    state: tauri::State<'_, App>,
-) -> Result<commands::Ok_<Vec<TreeNode>>, commands::Err_> {
+fn list_tree(state: tauri::State<'_, App>) -> Result<commands::Ok_<Vec<TreeNode>>, commands::Err_> {
     let ctx = lock(&state)?;
     commands::list_tree(&ctx)
 }
 
 #[tauri::command]
-fn cmd_read_note(
+fn read_note(
     state: tauri::State<'_, App>,
     rel: String,
 ) -> Result<commands::Ok_<commands::NotePayload>, commands::Err_> {
@@ -96,7 +113,7 @@ fn cmd_read_note(
 }
 
 #[tauri::command]
-fn cmd_write_note(
+fn write_note(
     state: tauri::State<'_, App>,
     rel: String,
     content: String,
@@ -106,7 +123,7 @@ fn cmd_write_note(
 }
 
 #[tauri::command]
-fn cmd_create_note(
+fn create_note(
     state: tauri::State<'_, App>,
     dir: String,
     title: String,
@@ -116,7 +133,7 @@ fn cmd_create_note(
 }
 
 #[tauri::command]
-fn cmd_create_dir(
+fn create_dir(
     state: tauri::State<'_, App>,
     rel: String,
 ) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
@@ -125,7 +142,7 @@ fn cmd_create_dir(
 }
 
 #[tauri::command]
-fn cmd_rename(
+fn rename(
     state: tauri::State<'_, App>,
     rel: String,
     to_title: String,
@@ -135,16 +152,13 @@ fn cmd_rename(
 }
 
 #[tauri::command]
-fn cmd_delete(
-    state: tauri::State<'_, App>,
-    rel: String,
-) -> Result<commands::Ok_<()>, commands::Err_> {
+fn delete(state: tauri::State<'_, App>, rel: String) -> Result<commands::Ok_<()>, commands::Err_> {
     let ctx = lock(&state)?;
     commands::delete(&ctx, &rel)
 }
 
 #[tauri::command]
-fn cmd_get_config(
+fn get_config(
     state: tauri::State<'_, App>,
 ) -> Result<commands::Ok_<config::Config>, commands::Err_> {
     let ctx = lock(&state)?;
@@ -152,7 +166,7 @@ fn cmd_get_config(
 }
 
 #[tauri::command]
-fn cmd_set_config(
+fn set_config(
     state: tauri::State<'_, App>,
     cfg: config::Config,
 ) -> Result<commands::Ok_<config::Config>, commands::Err_> {
@@ -161,7 +175,7 @@ fn cmd_set_config(
 }
 
 #[tauri::command]
-fn cmd_app_version(
+fn app_version(
     state: tauri::State<'_, App>,
 ) -> Result<commands::Ok_<&'static str>, commands::Err_> {
     // `commands::app_version` ne peut pas echouer : il renvoie deja l'enveloppe.
@@ -169,53 +183,87 @@ fn cmd_app_version(
     Ok(commands::app_version(&ctx))
 }
 
+/// Ouvre l'URL dans le navigateur du système, après l'avoir fait valider par
+/// `commands::open_external`.
+///
+/// `open_url` est non bloquant (le plugin détache le processus), donc cette
+/// commande reste synchrone. `None::<&str>` = aucun programme imposé, donc
+/// l'application par défaut du système pour un `https://`.
 #[tauri::command]
-fn cmd_open_external(
+fn open_external(
+    app: tauri::AppHandle,
     state: tauri::State<'_, App>,
     url: String,
 ) -> Result<commands::Ok_<String>, commands::Err_> {
     let ctx = lock(&state)?;
-    commands::open_external(&ctx, &url)
+    let res = commands::open_external(&ctx, &url)?;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|err| plugin_failed("ouverture impossible", err))?;
+    Ok(res)
 }
 
-/// Renvoie la racine courante. Le dialogue natif est piloté par le plugin
-/// `dialog` côté JS, puis le JS appelle `set_root`.
+/// Recopie la racine courante dans la configuration : c'est elle qui est relue au
+/// prochain lancement.
+fn remember_root(ctx: &Ctx<'static>, path: &Path) -> Result<(), commands::Err_> {
+    let mut cfg = ctx.config.lock().map_err(|_| poisoned())?;
+    cfg.root = Some(path.to_string_lossy().into_owned());
+    Ok(())
+}
+
+/// Ouvre le dialogue NATIF de choix de dossier, puis délègue la validation à
+/// `commands::pick_root`.
+///
+/// Le dialogue est ici, et non côté JS, parce que l'API `@tauri-apps/plugin-dialog`
+/// est un paquet npm : ce projet n'a ni bundler ni dépendance runtime, donc
+/// `withGlobalTauri` n'injecte que le cœur Tauri. Sans ce dialogue, le bureau n'a
+/// aucun moyen de choisir son dossier de notes.
+///
+/// `blocking_pick_folder` bloque : la commande est donc `async`, ce qui la fait
+/// tourner sur le runtime asynchrone et non sur le thread principal (la doc du
+/// plugin le dit explicitement).
 #[tauri::command]
-fn pick_root(state: tauri::State<'_, App>) -> Result<commands::Ok_<String>, commands::Err_> {
-    let ctx = lock(&state)?;
-    match ctx.root.clone() {
-        Some(p) => Ok(commands::Ok_ {
-            ok: true,
-            data: Some(p.to_string_lossy().into_owned()),
-        }),
-        None => Err(commands::Err_::from(FsError::NoRoot)),
+async fn pick_root(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, App>,
+) -> Result<commands::Ok_<PathBuf>, commands::Err_> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Dossier de notes")
+        .blocking_pick_folder()
+        .map(|path| path.into_path())
+        .transpose()
+        .map_err(|err| plugin_failed("dossier illisible", err))?;
+    let mut ctx = lock(&state)?;
+    let res = commands::pick_root(&mut ctx, picked)?;
+    if let Some(root) = res.data.as_deref() {
+        remember_root(&ctx, root)?;
     }
+    Ok(res)
 }
 
 /// Fixe la racine choisie par le dialogue natif. `None` = annulation -> `no_root`.
+///
+/// Délègue à `commands::set_root` : la validation du dossier et l'écriture de
+/// `c.root` vivent dans `commands`, donc dans `cargo test`. Ce wrapper n'ajoute
+/// que la persistance, que `commands` ne fait pas (il ignore la configuration).
+/// Les deux implémentations divergeaient déjà — ici `None` renvoyait `no_root`
+/// sans toucher à la racine, là-bas `c.root` repassait à `None` avant l'erreur.
 #[tauri::command]
 fn set_root(
     state: tauri::State<'_, App>,
     root: Option<String>,
 ) -> Result<commands::Ok_<String>, commands::Err_> {
-    let Some(p) = root else {
-        return Err(commands::Err_::from(FsError::NoRoot));
-    };
-    let path = PathBuf::from(p);
-    if !path.is_dir() {
-        return Err(commands::Err_::from(FsError::NotFound));
-    }
-    {
-        let mut ctx = lock(&state)?;
-        ctx.root = Some(path.clone());
-        // On enregistre aussi dans la configuration : c'est elle qui est relue au
-        // prochain lancement.
-        let mut cfg = ctx.config.lock().map_err(|_| poisoned())?;
-        cfg.root = Some(path.to_string_lossy().into_owned());
+    let mut ctx = lock(&state)?;
+    let res = commands::set_root(&mut ctx, root.map(PathBuf::from))?;
+    let data = res.data;
+    if let Some(p) = data.as_deref() {
+        remember_root(&ctx, p)?;
     }
     Ok(commands::Ok_ {
         ok: true,
-        data: Some(path.to_string_lossy().into_owned()),
+        data: data.map(|p| p.to_string_lossy().into_owned()),
     })
 }
 
@@ -235,7 +283,6 @@ fn build() -> tauri::Builder<tauri::Wry> {
                     config: Mutex::new(cfg),
                     // UNE seule instance, partagée avec le watcher.
                     self_writes: Arc::new(Mutex::new(SelfWrites::new())),
-                    open_urls: Mutex::new(BTreeMap::new()),
                     trasher,
                 }),
             });
@@ -255,19 +302,19 @@ fn build() -> tauri::Builder<tauri::Wry> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            cmd_list_tree,
-            cmd_read_note,
-            cmd_write_note,
-            cmd_create_note,
-            cmd_create_dir,
-            cmd_rename,
-            cmd_delete,
-            cmd_get_config,
-            cmd_set_config,
+            list_tree,
+            read_note,
+            write_note,
+            create_note,
+            create_dir,
+            rename,
+            delete,
+            get_config,
+            set_config,
             pick_root,
             set_root,
-            cmd_app_version,
-            cmd_open_external,
+            app_version,
+            open_external,
         ])
 }
 

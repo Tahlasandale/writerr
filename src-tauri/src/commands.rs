@@ -7,11 +7,10 @@
 //! Invariants tenus ici :
 //! - tout chemin reçu du JS passe par [`paths::resolve`] avant tout effet disque ;
 //! - une commande sans racine configurée échoue avec `FsError::NoRoot` ;
-//! - `open_external` n'accepte que `https://github.com/…` ;
+//! - [`external_url`] n'accepte que `http://` et `https://` ;
 //! - `write_note` marque le chemin dans `SelfWrites` pour que le watcher ignore
 //!   ses propres écritures.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -34,8 +33,6 @@ pub struct Ctx<'a> {
     /// An `Arc`, not a copy: the watcher must consult the VERY SAME registry that
     /// `write_note` fills, otherwise the anti-loop filter never matches.
     pub self_writes: std::sync::Arc<Mutex<crate::selfwrites::SelfWrites>>,
-    /// In tests: the URLs allowed by `open_external`, captured instead of opened.
-    pub open_urls: Mutex<BTreeMap<String, String>>,
     /// How deletions reach the system trash.
     pub trasher: &'a dyn notes::Trasher,
 }
@@ -277,24 +274,35 @@ pub fn app_version(_c: &Ctx<'_>) -> Ok_<&'static str> {
     }
 }
 
-/// Seule `https://github.com/…` est acceptée (§5.11) : le JS ne peut pas faire
-/// ouvrir un `file://` ni un `javascript:`.
-#[cfg_attr(feature = "app", tauri::command)]
-pub fn open_external(c: &Ctx<'_>, url: &str) -> R<String> {
-    let ok = url.starts_with("https://github.com/")
-        && !url.starts_with("https://github.com.evil")
+/// Valide une URL que le bureau ouvre dans le navigateur système.
+///
+/// « Tous les liens » veut dire « tous les liens de l'interface », pas « n'importe
+/// quel schéma » : seuls `http://` et `https://` passent, donc `file://`,
+/// `javascript:`, `data:` et `vbscript:` sont refusés. Une URL contenant `..` ou
+/// un espace l'est aussi.
+///
+/// Fonction **pure** : c'est ici que vit la liste blanche, testable sans runtime
+/// Tauri. L'ouverture réelle est faite par le plugin `opener`, dans le binaire.
+pub fn external_url(url: &str) -> Result<String, Err_> {
+    let allowed = (url.starts_with("https://") || url.starts_with("http://"))
         && !url.contains("..")
         && !url.contains(char::is_whitespace);
-    if !ok {
+    if !allowed {
         return Err(FsError::Io("URL non autorisée".to_owned()).into());
     }
-    c.open_urls
-        .lock()
-        .map_err(|_| poisoned())?
-        .insert(url.to_owned(), String::new());
+    Ok(url.to_owned())
+}
+
+/// Renvoie l'URL validée par [`external_url`], à ouvrir ensuite dans le
+/// navigateur système.
+///
+/// L'ouverture n'est pas faite ici : elle appartient au plugin `opener`, qui n'est
+/// joignable que depuis le binaire. Cette fonction reste donc pure et testable.
+#[cfg_attr(feature = "app", tauri::command)]
+pub fn open_external(_c: &Ctx<'_>, url: &str) -> R<String> {
     Ok(Ok_ {
         ok: true,
-        data: Some(url.to_owned()),
+        data: Some(external_url(url)?),
     })
 }
 
@@ -332,7 +340,6 @@ mod tests {
             root: Some(PathBuf::from("/vault")),
             config: Mutex::new(Config::default()),
             self_writes: std::sync::Arc::new(Mutex::new(Default::default())),
-            open_urls: Mutex::new(BTreeMap::new()),
             trasher: &crate::notes::SystemTrasher,
         };
         assert_eq!(

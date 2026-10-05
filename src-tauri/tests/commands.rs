@@ -1,10 +1,9 @@
 // Tests d'intégration des commandes (§5.11) : toute commande qui prend un chemin
 // passe par paths::resolve, refuse un chemin hors racine et n'a aucun effet disque ;
-// `open_external` n'accepte que `https://github.com/…`.
+// `open_external` n'accepte que `http://` et `https://`.
 //
 // Ces tests n'utilisent PAS le runtime Tauri : les commandes sont des fonctions
 // pures sur un contexte injectable, donc testables sans GTK/WebKit.
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -73,7 +72,6 @@ fn ctx<'a>(e: &'a Env, trasher: &'a dyn Trasher) -> Ctx<'a> {
         root: Some(e.root.clone()),
         config: Mutex::new(Default::default()),
         self_writes: std::sync::Arc::new(Mutex::new(Default::default())),
-        open_urls: Mutex::new(BTreeMap::new()),
         trasher,
     }
 }
@@ -274,31 +272,69 @@ fn the_root_itself_is_protected() {
     assert!(t.trashed.lock().unwrap().is_empty());
 }
 
+/// Tous les liens de l'interface partent dans le navigateur du système, mais par
+/// « tous les liens » on entend « tous les liens », pas « n'importe quel schéma » :
+/// seuls `http://` et `https://` passent.
 #[test]
-fn open_external_only_accepts_github_over_https() {
+fn open_external_accepts_http_and_https_only() {
     let e = env();
     let t = FakeTrasher::default();
     let c = ctx(&e, &t);
-    let good = "https://github.com/Tahlasandale/writerr/releases/latest";
-    assert_eq!(data(commands::open_external(&c, good).unwrap()), good);
+    for good in [
+        "https://github.com/Tahlasandale/writerr/releases/latest",
+        "https://tahlasandale.github.io/writerr/a-propos.html",
+        "http://example.org/",
+    ] {
+        assert_eq!(data(commands::open_external(&c, good).unwrap()), good);
+    }
     for bad in [
-        "http://github.com/x/y",
-        "https://gitlab.com/x/y",
-        "https://github.com.evil.com/x",
-        "https://github.com/../x",
         "file:///etc/passwd",
         "javascript:alert(1)",
         "data:text/html,<script>",
+        "vbscript:msgbox(1)",
+        "ftp://example.org/x",
+        "https:/example.org",
+        "https://github.com/../x",
+        "https://example.org/a b",
         "",
     ] {
         let err = commands::open_external(&c, bad).unwrap_err();
         assert!(!err.ok, "{bad:?} doit être refusé");
+        assert_eq!(err_code(err), "io", "{bad:?} doit être refusé");
     }
+}
+
+/// La liste blanche est une fonction PURE : elle se teste sans contexte, et donc
+/// sans runtime Tauri. C'est ici, et non dans le binaire, que vit la règle.
+#[test]
+fn external_url_is_a_pure_whitelist() {
     assert_eq!(
-        c.open_urls.lock().unwrap().len(),
-        1,
-        "seule l'URL valide est transmise"
+        commands::external_url("https://tahlasandale.github.io/").unwrap(),
+        "https://tahlasandale.github.io/"
     );
+    assert!(commands::external_url("javascript:alert(1)").is_err());
+    assert!(commands::external_url("file:///etc/passwd").is_err());
+    // Un registre de schémas suffirait pas : le refus porte sur TOUT ce qui n'est
+    // pas http(s), y compris un schéma inconnu.
+    assert!(commands::external_url("myapp://ouvrir/x").is_err());
+    // Tabulation et fin de ligne ne passent pas plus que l'espace : une URL qui en
+    // contient peut être une tentative de découpe de ligne de commande.
+    assert!(commands::external_url("https://example.org/a\nb").is_err());
+    assert!(commands::external_url("https://example.org/a\tb").is_err());
+}
+
+/// Une URL refusée ne doit jamais atteindre le navigateur : la commande échoue
+/// avant toute ouverture, et rien n'est mémorisé.
+#[test]
+fn a_refused_url_is_not_opened() {
+    let e = env();
+    let t = FakeTrasher::default();
+    let c = ctx(&e, &t);
+    assert!(commands::open_external(&c, "file:///etc/passwd").is_err());
+    // Une URL valide, elle, remonte bien jusqu'au binaire (le `data` renvoyé est
+    // exactement ce que le plugin `opener` va ouvrir).
+    let ok = data(commands::open_external(&c, "https://example.org/x").unwrap());
+    assert_eq!(ok, "https://example.org/x");
 }
 
 #[test]
