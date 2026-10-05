@@ -82,7 +82,8 @@ fn start_watcher(app: &tauri::AppHandle) {
 fn cmd_list_tree(
     state: tauri::State<'_, App>,
 ) -> Result<commands::Ok_<Vec<TreeNode>>, commands::Err_> {
-    commands::list_tree(&lock(&state)?)
+    let ctx = lock(&state)?;
+    commands::list_tree(&ctx)
 }
 
 #[tauri::command]
@@ -90,7 +91,8 @@ fn cmd_read_note(
     state: tauri::State<'_, App>,
     rel: String,
 ) -> Result<commands::Ok_<commands::NotePayload>, commands::Err_> {
-    commands::read_note(&lock(&state)?, &rel)
+    let ctx = lock(&state)?;
+    commands::read_note(&ctx, &rel)
 }
 
 #[tauri::command]
@@ -99,7 +101,8 @@ fn cmd_write_note(
     rel: String,
     content: String,
 ) -> Result<commands::Ok_<commands::MtimePayload>, commands::Err_> {
-    commands::write_note(&lock(&state)?, &rel, &content)
+    let ctx = lock(&state)?;
+    commands::write_note(&ctx, &rel, &content)
 }
 
 #[tauri::command]
@@ -108,7 +111,8 @@ fn cmd_create_note(
     dir: String,
     title: String,
 ) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
-    commands::create_note(&lock(&state)?, &dir, &title)
+    let ctx = lock(&state)?;
+    commands::create_note(&ctx, &dir, &title)
 }
 
 #[tauri::command]
@@ -116,7 +120,8 @@ fn cmd_create_dir(
     state: tauri::State<'_, App>,
     rel: String,
 ) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
-    commands::create_dir(&lock(&state)?, &rel)
+    let ctx = lock(&state)?;
+    commands::create_dir(&ctx, &rel)
 }
 
 #[tauri::command]
@@ -125,7 +130,8 @@ fn cmd_rename(
     rel: String,
     to_title: String,
 ) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
-    commands::rename(&lock(&state)?, &rel, &to_title)
+    let ctx = lock(&state)?;
+    commands::rename(&ctx, &rel, &to_title)
 }
 
 #[tauri::command]
@@ -133,14 +139,16 @@ fn cmd_delete(
     state: tauri::State<'_, App>,
     rel: String,
 ) -> Result<commands::Ok_<()>, commands::Err_> {
-    commands::delete(&lock(&state)?, &rel)
+    let ctx = lock(&state)?;
+    commands::delete(&ctx, &rel)
 }
 
 #[tauri::command]
 fn cmd_get_config(
     state: tauri::State<'_, App>,
 ) -> Result<commands::Ok_<config::Config>, commands::Err_> {
-    commands::get_config(&lock(&state)?)
+    let ctx = lock(&state)?;
+    commands::get_config(&ctx)
 }
 
 #[tauri::command]
@@ -148,15 +156,17 @@ fn cmd_set_config(
     state: tauri::State<'_, App>,
     cfg: config::Config,
 ) -> Result<commands::Ok_<config::Config>, commands::Err_> {
-    commands::set_config(&lock(&state)?, cfg)
+    let ctx = lock(&state)?;
+    commands::set_config(&ctx, cfg)
 }
 
 #[tauri::command]
 fn cmd_app_version(
     state: tauri::State<'_, App>,
 ) -> Result<commands::Ok_<&'static str>, commands::Err_> {
-    // `commands::app_version` ne peut pas échouer : il renvoie déjà l'enveloppe.
-    Ok(commands::app_version(&lock(&state)?))
+    // `commands::app_version` ne peut pas echouer : il renvoie deja l'enveloppe.
+    let ctx = lock(&state)?;
+    Ok(commands::app_version(&ctx))
 }
 
 #[tauri::command]
@@ -164,7 +174,8 @@ fn cmd_open_external(
     state: tauri::State<'_, App>,
     url: String,
 ) -> Result<commands::Ok_<String>, commands::Err_> {
-    commands::open_external(&lock(&state)?, &url)
+    let ctx = lock(&state)?;
+    commands::open_external(&ctx, &url)
 }
 
 /// Renvoie la racine courante. Le dialogue natif est piloté par le plugin
