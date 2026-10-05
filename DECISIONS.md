@@ -149,6 +149,11 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
   à l'intérieur (erreur « cannot borrow data in dereference of `State` as mutable »).
   Un `Mutex` autour du contexte est plus simple qu'un tas de `RwLock` par champ, et
   il protège aussi la configuration, lue par ailleurs.
+- **Piège de durée de vie** : `lock()` ne prend pas `&State<'_, App>` mais `&App`.
+  `State` porte deux durées de vie et le `MutexGuard` renvoyé doit dire laquelle il
+  emprunte (« missing lifetime specifier ») ; le déréférencement de `State` n'en a
+  qu'une.
+
 - **Détail qui a coûté un round-trip CI** : Tauri exige des PNG **RGBA**. Les
   icônes régénérées avec `convert … PNG32:` ; sans `-alpha on`, l'erreur est
   « icon …/32x32.png is not RGBA ».

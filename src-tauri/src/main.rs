@@ -31,8 +31,12 @@ fn poisoned() -> commands::Err_ {
     commands::Err_::from(FsError::Io("verrou interne empoisonné".to_owned()))
 }
 
-fn lock(state: &tauri::State<'_, App>) -> Result<MutexGuard<'_, Ctx<'static>>, commands::Err_> {
-    state.ctx.lock().map_err(|_| poisoned())
+/// `&App` et non `&State<'_, App>` : `State` porte DEUX durees de vie (celle du
+/// runtime et celle de la reference interne), et le garde renvoye doit dire
+/// laquelle il emprunte. En prenant `&App` — le dereferencement de `State` — il n'y
+/// en a qu'une.
+fn lock(app: &App) -> Result<MutexGuard<'_, Ctx<'static>>, commands::Err_> {
+    app.ctx.lock().map_err(|_| poisoned())
 }
 
 /// Démarre le watcher sur la racine configurée, s'il y en a une.
