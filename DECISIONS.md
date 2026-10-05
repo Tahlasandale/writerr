@@ -167,9 +167,7 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
   écriture. Sans cette discrimination, une note ouverte dans un éditeur_txt et un
   fichier créé par l'app étaient traités de la même façon.
 
-## `stats()` a gained un champ `bytes`
-
-- **Décision** : `stats(t)` retourne `{w, r, bytes}`.
+## `stats()` a gagné un champ `bytes`- **Décision** : `stats(t)` retourne `{w, r, bytes}`.
 - **Pourquoi** : le tri par taille a besoin des octets. `TextEncoder` n'existe pas
   dans tous les contextes, donc `byteLen()` itère les code points.
 
@@ -189,20 +187,87 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
   comportement réel quand elles étaient fausses (ex. `slug('déjà vu')` → `d_j_vu`),
   et non l'inverse.
 
+## Vérifier les liens de la documentation
+
+- **Décision** : contrôle automatique des liens markdown et des ancres internes.
+- **Pourquoi** : le README pointait vers `index.html`, déplacé dans `web/` six commits
+  plus tôt. Un lien mort dans le README est invisible sauf si on clique le lien.
+
 ## Format des tests d'entrée
 
-- `tests/writerr.test.js` : Chromium réel (72 assertions d'origine + T, U).
+- `tests/writerr.test.js` : Chromium réel, 108 assertions groupées par lettre
+  (A édition · B curseur · C continuations · D cases · E séparateur · F palette `/` ·
+  G frappe · H collage · I persistance · J plan · K exports · L documents · M titre ·
+  N masquage · O import · P échap · Q scroll · R import dossier · S repli
+  localStorage · T tri/recherche/À propos · U desktop simulé · **V intégrité du
+  balisage et géométrie des tiroirs**).
 - `tests/js/*.test.js` : `node:test` pour le pur et les contrats.
 - `src-tauri/tests/` : intégration Rust, sans GTK.
 
+## Recette manuelle — ce qui n'est PAS vérifié
+
+Aucune de ces cases n'est cochée : elles exigent une session graphique et les libs
+GTK/WebKit, absentes de l'environnement de développement. Le code compile et la CI
+est verte, mais **le binaire n'a jamais été exécuté**.
+
+- [ ] Bureau : l'app démarre, l'écran « Choisir le dossier de notes » apparaît
+- [ ] Bureau : choix du dossier via le dialogue natif, l'arborescence s'affiche
+- [ ] Bureau : création, renommage, suppression (corbeille), dossiers imbriqués
+- [ ] Bureau : modifier un `.md` depuis un éditeur externe → rechargement ou bandeau « Modifié ailleurs »
+- [ ] Bureau : fermer la fenêtre en pleine frappe → contenu bien enregistré
+- [ ] Bureau : les liens du panneau À propos ouvrent le navigateur système
+- [ ] Web : les trois tiroirs s'ouvrent et se ferment (Documents, Plan, À propos) — couvert par les tests, à revérifier à l'œil
+- [ ] Web : aucun appel réseau hors fichiers locaux (police JetBrains Mono active)
+- [ ] Import d'une sauvegarde `.json` de la PWA dans le bureau : chaque document devient un `.md` nommé d'après son titre
+
 ---
+
+## Le tiroir ne s'ouvrait pas : spécificité CSS
+
+- **Décision** : l'état ouvert cible les id (`#docs.open,#toc.open,#about.open`)
+  et non `.dr.open`.
+- **Pourquoi** : les règles fermées ciblent un id → spécificité (1,0,0) ;
+  `.dr.open` est une classe → (0,2,0). La cascade laissait donc
+  `transform: translateX(±101%)` l'emporter, et **aucun tiroir ne s'ouvrait**,
+  depuis le commit d'origine. Ce n'est visible qu'en interrogeant
+  `getBoundingClientRect()` : la classe `.open` était bien posée, mes 101 tests
+  passaient. Documents, Plan et À propos étaient inaccessibles à l'écran.
+- **Leçon** : un test qui vérifie une classe ne prouve pas qu'un élément est
+  visible. `tests/writerr.test.js` bloc V mesure désormais la géométrie réelle.
+  Vérifié en annulant le correctif CSS : 4 tests tombent.
+
+## `&lock(&state)?` : le `?` et le `&` se disputent
+
+- **Décision** : on écrit `let ctx = lock(&state)?;` puis `&ctx`.
+- **Pourquoi** : `&lock(&state)?` laissait le compilateur choisir entre
+  `&(lock(…)?)` et `(&lock(…))?` ; il retenait la seconde forme et tentait une
+  conversion `MutexGuard` → `Ctx`. Un binding explicite supprime l'ambiguïté
+  (et se lit mieux).
+
+## Vérifier avant d'annoncer : le bug était déployé
+
+- **Décision** : contrôler le site réellement servi avant de considérer une étape
+  comme terminée.
+- **Pourquoi** : le déplacement vers `web/` n'avait jamais été vérifié en ligne.
+  C'est en fetching `https://writerr-pi.vercel.app` qu'ont été trouvés le
+  `id="toc"` dupliqué **et** les tiroirs cassés — invisibles pour 101 tests e2e.
+
+## Pas de release avant le premier tag
+
+- **Décision** : le README indique explicitement que la page Releases est vide et
+  que le lien « Télécharger la dernière version » mène à un 404 tant que
+  `v0.1.0` n'est pas poussé.
+- **Pourquoi** : `aboutLinks().latest` pointe par construction vers
+  `/releases/latest`. C'est le comportement voulu (§7), mais un 404 dans un
+  panneau « À propos » se lit comme un bug.
 
 ## À remplacer avant publication
 
 | Clé | Valeur actuelle | Où |
 |---|---|---|
-| titularité de la LICENSE | Joseph Humbert | `LICENSE` — à confirmer |
-| `OWNER` dans la spec | remplacé par l'URL réelle | `web/config.js`, `docs/design-doc.md` |
+| titularité de la LICENSE | Joseph Humbert | `LICENSE` — **à confirmer**, c'est un choix juridique |
+| `OWNER` dans la spec | remplacé par l'URL réelle | `web/config.js` |
+| version `0.1.0` | `package.json`, `web/config.js`, `tauri.conf.json`, `Cargo.toml` | vérifié par `tests/js/version.test.js` |
 
 ## Non fait / hors périmètre
 

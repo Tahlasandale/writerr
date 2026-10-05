@@ -1,5 +1,13 @@
 # SPEC AGENT — Writer Deck : PWA + application desktop Tauri (TDD, one-shot)
 
+> ⚠️ **Ce document est la SPEC D'ORIGINE, pas l'état actuel du code.**
+> Il a été écrit avant l'implémentation et décrit donc un état qui n'existe pas :
+> `index.html` à la racine du dépôt (aujourd'hui `web/index.html`), `sw.js` et
+> `pages.yml` (abandonnés), `rayon` et `notify-debouncer-full` (retirés),
+> le placeholder `OWNER` (remplacé), et des seuils de performance qui n'ont pas
+> été tenus tels quels.
+> **Pour savoir ce qui est réellement en place, et pourquoi : [`DECISIONS.md`](../DECISIONS.md).**
+
 > **Destinataire : un agent IA de développement autonome.**
 > Ce document est ta seule source de vérité. Tu n'as **aucune question à poser** : toute ambiguïté est tranchée en §12. Si un point reste ouvert, choisis l'option la plus simple et note-la dans `DECISIONS.md`.
 > Les mots **DOIT / NE DOIT PAS / PEUT** ont leur sens RFC 2119.

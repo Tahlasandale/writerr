@@ -15,6 +15,13 @@ const TYPES = {
 function serve(port = 0) {
   const srv = http.createServer((req, res) => {
     const rel = decodeURIComponent(req.url.split('?')[0]);
+    // L'app vit dans web/ : « / » redirige vers elle, sinon `npm run serve`
+    // affiche une arborescence de fichiers sans moyen de deviner la bonne URL.
+    if (rel === '/' || rel === '/index.html') {
+      res.writeHead(302, { Location: '/web/index.html' });
+      res.end();
+      return;
+    }
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT)) { res.writeHead(403).end('403'); return; }
     fs.readFile(file, (err, data) => {
@@ -26,6 +33,7 @@ function serve(port = 0) {
   return new Promise(resolve => {
     srv.listen(port, '127.0.0.1', () => resolve({
       url: `http://127.0.0.1:${srv.address().port}`,
+      app: `http://127.0.0.1:${srv.address().port}/web/index.html`,
       close: () => new Promise(r => srv.close(r)),
     }));
   });
@@ -34,5 +42,8 @@ function serve(port = 0) {
 module.exports = { serve };
 
 if (require.main === module) {
-  serve(Number(process.env.PORT) || 4173).then(s => console.log(s.url));
+  serve(Number(process.env.PORT) || 4173).then(s => {
+    console.log(s.app);
+    console.log('(Ctrl+C pour arrêter)');
+  });
 }
