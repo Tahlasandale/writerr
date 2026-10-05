@@ -77,10 +77,11 @@ chmod +x Writer.Deck_0.1.0_amd64.AppImage && ./Writer.Deck_0.1.0_amd64.AppImage
 > L'AppImage fait 79 Mo parce qu'elle embarque WebKitGTK ; le `.deb` s'appuie sur
 > les bibliothèques du système et ne fait que 4,4 Mo.
 
-> ⚠️ **Statut de `v0.1.0` : binaire compilé et publié, mais jamais exécuté.**
-> Aucune recette graphique n'a été faite (il faut une session X11). Le premier
-> lancement est à considérer comme une phase de test — les points à vérifier sont
-> listés dans [`DECISIONS.md`](DECISIONS.md).
+> ⚠️ **Statut : le binaire démarre, la recette n'est que partielle.**
+> L'application a été lancée avec succès (sur `v0.1.2`, via le dépôt apt). Les
+> points restants — dialogue de choix de dossier, corbeille, édition externe —
+> sont listés dans [`DECISIONS.md`](DECISIONS.md). `v0.1.0` est superseded : son
+> `.deb` ne s'installe pas sur Debian 13.
 
 ### Version bureau — compiler chez soi
 
@@ -197,10 +198,11 @@ autre éditeur — les deux se voient.
 | Suppression | définitive | corbeille du système |
 | Tri, recherche, À propos | ✅ | ✅ |
 
-**État : le code compile et la CI est verte, mais l'application n'a pas encore été
-exécutée en conditions réelles** (il faut une session graphique et les libs GTK).
-La checklist de recette manuelle est listée dans `DECISIONS.md` — c'est le seul
-reste à faire.
+**État : le code compile, la CI est verte, et l'application démarre.** La recette
+manuelle n'est pas terminée : l'écran de choix du dossier, la corbeille, la
+réaction à une édition externe et les liens du panneau À propos restent à valider
+à la main, faute de quoi elles ne sont couvertes par aucun test. La liste est
+dans `DECISIONS.md`.
 
 Le cœur Rust (noms de fichiers sûrs, chemins confinés à la racine, écriture atomique,
 corbeille, configuration, watcher) est testé **sans** GTK/WebKit. Seul le binaire final

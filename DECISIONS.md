@@ -219,13 +219,19 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
   workflow. On ne publie que lorsque le binaire a été lancé au moins une fois —
   une 0.2.0 ne partira pas sur un code que personne n'a exécuté.
 
-## Recette manuelle — ce qui n'est PAS vérifié
+## Recette manuelle — ce qui est et n'est pas vérifié
 
-Aucune de ces cases n'est cochée : elles exigent une session graphique et les libs
-GTK/WebKit, absentes de l'environnement de développement. Le code compile et la CI
-est verte, mais **le binaire n'a jamais été exécuté**.
+Le binaire **démarre** : l'utilisateur l'a lancé et l'application s'ouvre. C'est
+la première exécution réelle, et elle invalide la phrase « jamais exécuté » qui
+figuraient ici jusque-là.
 
-- [ ] Bureau : l'app démarre, l'écran « Choisir le dossier de notes » apparaît
+**Ce que cela ne prouve pas** : un lancement réussi n'est pas une recette. Les
+points ci-dessous sont ceux qui restent à valider à la main ; le premier est le
+seul que l'on sache fait. Le reste demande une session graphique et les libs
+GTK/WebKit, absentes de l'environnement de développement.
+
+- [x] Bureau : l'app démarre
+- [ ] Bureau : l'écran « Choisir le dossier de notes » apparaît
 - [ ] Bureau : choix du dossier via le dialogue natif, l'arborescence s'affiche
 - [ ] Bureau : création, renommage, suppression (corbeille), dossiers imbriqués
 - [ ] Bureau : modifier un `.md` depuis un éditeur externe → rechargement ou bandeau « Modifié ailleurs »
@@ -274,6 +280,11 @@ est verte, mais **le binaire n'a jamais été exécuté**.
 - **Pourquoi** : le binaire n'a jamais été exécuté (ni ici, ni ailleurs). Publier
   une release « officielle » sans l'avoir lancée ferait du 0.1.0 une version que
   personne n'a testée. Le brouillon permet de telecharger et tester sans engagements.
+- **Suite (le motif a changé)** : le binaire **démarre** depuis — lancé par
+  l'utilisateur sur `v0.1.2`, via le dépôt apt. La raison ci-dessus ne vaut donc
+  plus pour les versions suivantes, et le brouillon pourra être levé quand la
+  recette sera complète. On garde la phrase d'origine : c'est le motif *à ce
+  moment-là*, et un journal qui se réécrit ne vaut plus rien.
 - **Taille** : AppImage 79 Mo, `.deb` 4,4 Mo. L'écart vient de WebKitGTK, embarqué
   dans l'AppImage et pris dans le système pour le `.deb`. Les 15 Mo de §10 ne sont
   donc atteignables que pour le `.deb`.

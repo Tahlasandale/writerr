@@ -59,10 +59,18 @@ test('le README documente les trois façons de tester', () => {
   assert.match(readme, /libwebkit2gtk/, 'prérequis GTK listés');
 });
 
-test('DECISIONS.md signale qu\'aucune recette graphique n\'est faite', () => {
+test('DECISIONS.md dit ce que la recette a et n\'a pas validé', () => {
   const d = fs.readFileSync(path.join(ROOT, 'DECISIONS.md'), 'utf8');
   assert.match(d, /Recette manuelle/, 'la section de recette existe');
-  assert.ok(/n'a jamais été exécuté|jamais été exécuté/.test(d), 'et dit que le binaire n\'a pas été exécuté');
+  // Le binaire démarre : le dire serait faux. Mais tant que la recette n'est
+  // pas finie, les cases non cochées doivent rester visibles, sans quoi le dépôt
+  // prétend avoir validé ce qu'il n'a pas validé.
+  const [fait, aFaire] = d.split('## Recette manuelle')[1].split('\n---')[0]
+    .match(/- \[[ x]\]/g).reduce(([a, b], c) => (c === '- [x]' ? [a + 1, b] : [a, b + 1]), [0, 0]);
+  assert.ok(fait >= 1, 'au moins un point doit être validé : le binaire démarre');
+  assert.ok(aFaire >= 5,
+    `les points à valider manuellement doivent rester listés (${aFaire} cochés « à faire »), `
+    + 'faute de quoi le dépôt prétend avoir validé ce qu\'il n\'a pas validé');
 });
 
 test('le README donne la procédure d\'installation par le dépôt APT', () => {
