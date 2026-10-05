@@ -40,7 +40,7 @@ test('le MSRV est coherent avec ce que chaque chemin exige', () => {
   const cargo = read('src-tauri/Cargo.toml');
   // Le coeur (cargo test / clippy) doit rester jouable sur un toolchain ancien.
   assert.match(cargo, /rust-version = "1\.85"/,
-    'la bibliotheque seule declare 1.85 : 237 tests y passent');
+    'la bibliotheque seule declare 1.85 : le coeur y est teste');
   // ...et le seuil du feature `app` doit etre ecrit quelque part, sinon personne
   // ne comprend pourquoi `cargo build --features app` echoue sur 1.85.
   assert.match(cargo, /1\.90/,
