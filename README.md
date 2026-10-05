@@ -34,9 +34,8 @@ Sur mobile, « ⋮ → Ajouter à l'écran d'accueil » installe l'application.
 
 ### Version bureau — Debian / Ubuntu (mise à jour par apt)
 
-Le paquet est publié dans un **dépôt APT signé**, régénéré à chaque version :
-
-([Doc ici]([(https://tahlasandale.github.io/writerr/)])
+Le paquet est publié dans un **dépôt APT signé**, régénéré à chaque version.
+La page du dépôt : <https://tahlasandale.github.io/writerr>
 
 ```bash
 sudo mkdir -p /etc/apt/keyrings
