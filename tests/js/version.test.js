@@ -1,5 +1,5 @@
 /* Cohérence de la version entre les 4 manifestes (spec §5.6).
-   Une divergence ici = l'app desktop, la PWA et le dépôt neuries木马 diverger. */
+   Une divergence ici = l'app desktop, la PWA et le dépôt ne peuvent pas diverger. */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
