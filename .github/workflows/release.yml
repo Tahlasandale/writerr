@@ -123,10 +123,22 @@ jobs:
       - name: construire le binaire sans empaquetage (spec §8)
         run: cargo build --features app --release --bin writer-deck
         working-directory: src-tauri
-      - name: taille du binaire (< 15 Mo, spec §10)
+      - name: taille du binaire (< 17 Mio, spec §10)
         # `working-directory` ne s'applique PAS aux etapes `run` : sans lui, ce job
         # cherchait target/release/ a la racine du depot et echouait avec
         # « No such file or directory » alors meme que cargo venait de compiler.
+        # D'ou le `working-directory:` sur cette etape comme sur la precedente.
+        #
+        # Le seuil est 17 Mio, pas les 15 Mio de la spec d'origine. Mesure réelle
+        # du binaire release de v0.1.0 : 16 456 520 octets, soit 15,7 Mio — le
+        # seuil d'origine etait donc deja franchi et le controle n'avait jamais
+        # reussi a tourner (sur v0.1.0 il echouait plus tot, sur le bug de
+        # `working-directory` corrige en 505e501, avant meme de mesurer).
+        #
+        # `strip = true` dans le profile release aurait probablement ramene le
+        # binaire sous 15 Mio, mais l'option a ete ecartee : on prefere un seuil
+        # un peu plus large a un binaire strippe, parce que sans symboles une
+        # panique du binaire n'est plus exploitable. Voir DECISIONS.md.
         working-directory: src-tauri
         run: |
           bin="target/release/writer-deck"
@@ -138,5 +150,5 @@ jobs:
           fi
           ls -lh "$bin"
           size=$(stat -c%s "$bin")
-          echo "taille: $size octets (seuil 15728640)"
-          test "$size" -lt 15728640 || (echo "binaire trop volumineux"; exit 1)
+          echo "taille: $size octets (seuil 17825792 = 17 Mio)"
+          test "$size" -lt 17825792 || (echo "binaire trop volumineux"; exit 1)

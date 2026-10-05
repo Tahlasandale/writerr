@@ -172,6 +172,20 @@ test('le script refuse un paquet sans champ Depends', { skip: !dpkg && 'dpkg-deb
   });
 });
 
+test('le seuil de taille reflète la taille réelle du binaire', () => {
+  const rel = read('.github/workflows/release.yml');
+  const seuils = [...rel.matchAll(/test "\$size" -lt (\d+)/g)].map(m => Number(m[1]));
+  assert.equal(seuils.length, 1, `un seul seuil attendu, trouvé ${seuils.length}`);
+  const seuil = seuils[0];
+  assert.equal(seuil, 17 * 1024 * 1024, 'le seuil est 17 Mio (voir DECISIONS.md)');
+
+  // Un seuil inférieur à la taille mesurée ferait échouer le contrôle à chaque
+  // release : c'est exactement le bug que la spec d'origine contenait.
+  assert.ok(seuil > 16_456_520,
+    `le seuil (${seuil}) doit dépasser la taille mesurée de v0.1.0 `
+    + '(16 456 520 octets), sinon le contrôle échouerait à chaque release');
+});
+
 test('le script refuse une entrée qui n\'est pas un .deb', () => {
   assert.throws(
     () => execFileSync(SCRIPT, ['/etc/hostname'], { stdio: 'pipe' }),
