@@ -204,6 +204,16 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
 - `tests/js/*.test.js` : `node:test` pour le pur et les contrats.
 - `src-tauri/tests/` : intégration Rust, sans GTK.
 
+## Tester le binaire
+
+- **Décision** : la procédure est écrite dans le README (« Installer et tester »),
+  avec les deux commandes de téléchargement et la taille réelle de chaque format.
+- **À savoir** : `v0.1.0` est un **brouillon**. Pour l'installer :
+  <https://github.com/Tahlasandale/writerr/releases> → `v0.1.0` → *Draft* →
+  *Assets* (`Writer.Deck_0.1.0_amd64.AppImage`, `Writer.Deck_0.1.0_amd64.deb`).
+  Le lien `/releases/latest` du panneau « À propos » reste donc en 404 tant que la
+  release n'est pas publiée.
+
 ## Recette manuelle — ce qui n'est PAS vérifié
 
 Aucune de ces cases n'est cochée : elles exigent une session graphique et les libs
@@ -252,14 +262,25 @@ est verte, mais **le binaire n'a jamais été exécuté**.
   C'est en fetching `https://writerr-pi.vercel.app` qu'ont été trouvés le
   `id="toc"` dupliqué **et** les tiroirs cassés — invisibles pour 101 tests e2e.
 
-## Pas de release avant le premier tag
+## Release : draft, et poids de l'AppImage
 
-- **Décision** : le README indique explicitement que la page Releases est vide et
-  que le lien « Télécharger la dernière version » mène à un 404 tant que
-  `v0.1.0` n'est pas poussé.
-- **Pourquoi** : `aboutLinks().latest` pointe par construction vers
-  `/releases/latest`. C'est le comportement voulu (§7), mais un 404 dans un
-  panneau « À propos » se lit comme un bug.
+- **Décision** : `v0.1.0` est publiée en **brouillon** (`releaseDraft: true`), donc
+  elle n'apparaît pas dans `/releases/latest` tant qu'elle n'est pas publiée à la main.
+- **Pourquoi** : le binaire n'a jamais été exécuté (ni ici, ni ailleurs). Publier
+  une release « officielle » sans l'avoir lancée ferait du 0.1.0 une version que
+  personne n'a testée. Le brouillon permet de telecharger et tester sans engagements.
+- **Taille** : AppImage 79 Mo, `.deb` 4,4 Mo. L'écart vient de WebKitGTK, embarqué
+  dans l'AppImage et pris dans le système pour le `.deb`. Les 15 Mo de §10 ne sont
+  donc atteignables que pour le `.deb`.
+
+## `working-directory` ne s'applique pas aux étapes `run`
+
+- **Décision** : on utilise `cd src-tauri && …` dans le script du job de taille.
+- **Pourquoi** : le job `construire le binaire` avait `working-directory: src-tauri`
+  (build OK), mais l'étape suivante ne l'avait pas et cherchait
+  `target/release/writer-deck` **à la racine du dépôt** → « No such file or
+  directory », alors même que cargo venait de compiler. Un message d'erreur
+  explicite liste maintenant ce que cargo a produit, pour ne pas se refaire avoir.
 
 ## À remplacer avant publication
 

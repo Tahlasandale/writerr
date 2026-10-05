@@ -37,9 +37,21 @@ Sur mobile, « ⋮ → Ajouter à l'écran d'accueil » installe l'application.
 Les binaires sont publiés par GitHub Actions à chaque tag `v*`
 (AppImage, `.deb`, `.rpm`) : <https://github.com/Tahlasandale/writerr/releases>
 
-> Avant la première release, cette page est vide et le lien
-> « Télécharger la dernière version » du panneau À propos mène à un 404.
-> C'est attendu, pas un bug.
+Depuis `v0.1.0` : **AppImage** (79 Mo, autonome) et **`.deb`** (4,4 Mo).
+
+```bash
+# AppImage : aucune installation
+wget https://github.com/Tahlasandale/writerr/releases/download/v0.1.0/Writer.Deck_0.1.0_amd64.AppImage
+chmod +x Writer.Deck_0.1.0_amd64.AppImage && ./Writer.Deck_0.1.0_amd64.AppImage
+```
+
+> L'AppImage fait 79 Mo parce qu'elle embarque WebKitGTK ; le `.deb` s'appuie sur
+> les bibliothèques du système et ne fait que 4,4 Mo. Choisissez le `.deb` si vous
+> êtes sur Debian/Ubuntu — `sudo apt install ./Writer.Deck_0.1.0_amd64.deb`.
+
+> ⚠️ **Statut de `v0.1.0` : binaire compilé et publié, mais jamais exécuté.**
+> Aucune recette graphique n'a été faite (il faut une session X11). Le premier
+> lancement est à considérer comme une phase de test.
 
 ### Version bureau — compiler chez soi
 

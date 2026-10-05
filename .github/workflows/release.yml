@@ -90,9 +90,21 @@ jobs:
       - name: construire le binaire sans empaquetage (§8)
         run: cargo build --features app --release --bin writer-deck
         working-directory: src-tauri
+      # `working-directory` ne s'applique PAS aux étapes `run` : sans lui, le job
+      # tournait à la racine du dépôt et cherchait target/release/ au mauvais endroit
+      # (« No such file or directory » alors que cargo venait de compiler).
       - name: taille du binaire (< 15 Mo, §10)
+        # `working-directory` ne s'applique pas aux `run` : on se place dans src-tauri.
+        working-directory: src-tauri
         run: |
-          ls -lh target/release/writer-deck
-          size=$(stat -c%s target/release/writer-deck)
-          echo "taille: $size octets"
+          bin="target/release/writer-deck"
+          if [ ! -f "$bin" ]; then
+            echo "binaire introuvable : $PWD/$bin"
+            echo "ce que cargo a réellement produit :"
+            ls -la target/release/ | head -20
+            exit 1
+          fi
+          ls -lh "$bin"
+          size=$(stat -c%s "$bin")
+          echo "taille: $size octets (seuil 15728640)"
           test "$size" -lt 15728640 || (echo "binaire trop volumineux"; exit 1)
