@@ -1,1 +1,4 @@
 /target
+# Schémas générés par tauri-build (gen/schemas/*.json) : régénérés à chaque build,
+# versionnés ils ne produiraient que des diffs de schéma.
+/gen

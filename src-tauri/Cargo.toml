@@ -2,6 +2,16 @@
 name = "writer-deck"
 version = "0.1.0"
 edition = "2021"
+# MSRV de la BIBLIOTHEQUE seule : `cargo test` / `cargo clippy` fonctionnent sur
+# 1.85 (verifie : 237 tests) et ne demandent ni GTK/WebKit ni Rust recent.
+#
+# ATTENTION -- le feature `app` (le binaire Tauri) exige rustc >= 1.90 : son graphe
+# contient tauri-utils 2.10.1 qui requiert 1.90. Cargo ne permet pas un MSRV par
+# feature ; declarer 1.90 ici ferait REFUSER `cargo test` sur 1.85, ce qui perdrait
+# la propriete "le coeur se teste partout". On garde donc 1.85 et on documente le
+# seuil du cote app : sur un toolchain trop ancien, cargo le dit explicitement
+# (« rustc X is not supported by the following packages: tauri-utils@2.10.1
+# requires rustc 1.90 »).
 rust-version = "1.85"
 description = "Writer Deck — coeur Rust : noms, chemins, notes, configuration, anti-boucle"
 license = "MIT"

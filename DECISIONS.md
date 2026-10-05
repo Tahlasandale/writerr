@@ -167,7 +167,9 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
   écriture. Sans cette discrimination, une note ouverte dans un éditeur_txt et un
   fichier créé par l'app étaient traités de la même façon.
 
-## `stats()` a gagné un champ `bytes`- **Décision** : `stats(t)` retourne `{w, r, bytes}`.
+## `stats()` a gagné un champ `bytes`
+
+- **Décision** : `stats(t)` retourne `{w, r, bytes}`.
 - **Pourquoi** : le tri par taille a besoin des octets. `TextEncoder` n'existe pas
   dans tous les contextes, donc `byteLen()` itère les code points.
 
@@ -206,13 +208,16 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
 
 ## Tester le binaire
 
-- **Décision** : la procédure est écrite dans le README (« Installer et tester »),
-  avec les deux commandes de téléchargement et la taille réelle de chaque format.
-- **À savoir** : `v0.1.0` est un **brouillon**. Pour l'installer :
-  <https://github.com/Tahlasandale/writerr/releases> → `v0.1.0` → *Draft* →
-  *Assets* (`Writer.Deck_0.1.0_amd64.AppImage`, `Writer.Deck_0.1.0_amd64.deb`).
-  Le lien `/releases/latest` du panneau « À propos » reste donc en 404 tant que la
-  release n'est pas publiée.
+- **Décision** : la procédure est écrite dans le README (« Installer et tester »).
+- **`v0.1.0` est publiée** (elle était en brouillon, donc invisible et en 404) :
+  <https://github.com/Tahlasandale/writerr/releases/tag/v0.1.0> —
+  `Writer.Deck_0.1.0_amd64.AppImage` (79 Mo) et `Writer.Deck_0.1.0_amd64.deb` (4,4 Mo).
+  Le `.rpm` n'a pas été gardé : il était dans un brouillon séparé, créé par la
+  matrice (voir « Une seule release par tag »). Il reviendra au prochain tag, désormais
+  dans la même release.
+- **Toujours en brouillon pour la suite** : `releaseDraft: true` reste dans le
+  workflow. On ne publie que lorsque le binaire a été lancé au moins une fois —
+  une 0.2.0 ne partira pas sur un code que personne n'a exécuté.
 
 ## Recette manuelle — ce qui n'est PAS vérifié
 
@@ -273,15 +278,56 @@ est verte, mais **le binaire n'a jamais été exécuté**.
   dans l'AppImage et pris dans le système pour le `.deb`. Les 15 Mo de §10 ne sont
   donc atteignables que pour le `.deb`.
 
+## MSRV : 1.85 pour la bibliothèque, 1.90 pour le binaire
+
+- **Décision** : `rust-version = "1.85"` est conservé, avec un commentaire dans
+  `Cargo.toml` expliquant que le feature `app` exige 1.90.
+- **Pourquoi** : Cargo n'a pas de MSRV par feature. Déclarer 1.90 ferait **refuser**
+  `cargo test` sur 1.85 — donc sur le `rustc` d'apt, que beaucoup de machines ont.
+  On perdrait « le cœur se teste partout, sans GTK ni Rust récent », qui est
+  précisément ce qui rend les 237 tests accessibles à n'importe qui.
+  Vérifié des deux côtés : cœur vert sur **1.85.1** et sur **1.99.0**.
+- **Le seuil est 1.90, pas 1.89** : cargo liste tous les crates en cause —
+  `darling` 1.88, `time` 1.88, `uuid` 1.89, et **`tauri-utils` 2.10.1 → 1.90**.
+  C'est le maximum qui fait foi, pas le dernier de la liste.
+- **Verrouillé par** `tests/js/version.test.js` (le README doit annoncer les deux seuils).
+
+## rustup n'était pas dans le PATH — et ça m'a fait valider sur le mauvais Rust
+
+- **Décision** : `. "$HOME/.cargo/env"` ajouté à `~/.bashrc` **et** `~/.profile`
+  (dépôt dotfiles), plus la marche à suivre dans le README.
+- **Pourquoi** : `~/.cargo/env` existait mais n'était sourcé par aucun des deux
+  fichiers. Conséquence : `which rustup` échouait et **toutes mes vérifications
+  locales passaient par `/usr/bin/rustc` (apt, 1.85.1)**. Le blocage
+  « `darling requires rustc 1.88` », que j'ai lu comme une contrainte insoluble,
+  venait simplement du mauvais toolchain.
+- **Leçon** : avant de conclure qu'une dépendance est incompatible, vérifier
+  `rustc --version` **et** son origine (`command -v`). Deux toolchains
+  cohabitaient sans bruit.
+- `.profile` en plus de `.bashrc` : les sessions de connexion (Sway, `ssh`) ne
+  lisent pas `.bashrc` et retomberaient sinon sur l'apt.
+
+## Une seule release par tag : la matrice créait des doublons
+
+- **Décision** : un job unique avec `--bundles appimage,deb,rpm`, plus de matrice.
+- **Pourquoi** : trois jobs en parallèle appelaient tous `tauri-action` avec le
+  **même** `tagName`. Chacun essayait de créer la release ; il en a résulté **deux
+  brouillons pour `v0.1.0`** (id `403662510` rpm seul, id `403662496` AppImage+deb),
+  et `gh release edit v0.1.0` devenait ambigu — il faut passer par l'API avec
+  l'id. Nettoyé à la main pour `v0.1.0` ; la structure du workflow empêche
+  désormais la récurrence.
+- **Vérifié** : `/releases/latest` et le téléchargement anonyme du `.deb`
+  répondent 200/206 depuis un shell non authentifié.
+
 ## `working-directory` ne s'applique pas aux étapes `run`
 
-- **Décision** : on utilise `cd src-tauri && …` dans le script du job de taille.
-- **Pourquoi** : le job `construire le binaire` avait `working-directory: src-tauri`
-  (build OK), mais l'étape suivante ne l'avait pas et cherchait
-  `target/release/writer-deck` **à la racine du dépôt** → « No such file or
-  directory », alors même que cargo venait de compiler. Un message d'erreur
-  explicite liste maintenant ce que cargo a produit, pour ne pas se refaire avoir.
-
+- **Décision** : on utilise `working-directory: src-tauri` sur les deux étapes, plus
+  un message d'erreur qui liste ce que cargo a réellement produit.
+- **Pourquoi** : le job `construire le binaire` en avait un (build OK), mais pas
+  l'étape suivante, qui cherchait `target/release/writer-deck` **à la racine du
+  dépôt** → « No such file or directory », alors même que cargo venait de compiler.
+- **Piège** : `working-directory` ne s'applique PAS aux étapes `run`. C'est une
+  distinction facile à manquer.
 ## À remplacer avant publication
 
 | Clé | Valeur actuelle | Où |

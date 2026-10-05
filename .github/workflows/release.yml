@@ -3,26 +3,24 @@ name: release
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
 
-# seule la release a besoin d'écrire (§9)
+# Permissions minimales : contents:write est necessaire a tauri-action pour creer
+# la release et uploader les bundles (spec §9).
 permissions:
   contents: write
 
 jobs:
   bundle:
-    name: linux ${{ matrix.target }}
+    # UN SEUL job pour les trois formats.
+    #
+    # La version precedente utilisait une matrice de 3 jobs, tous appelant
+    # tauri-action avec le MEME tagName : chacun essayait de creer la release en
+    # parallele, et deux brouillons ont coexiste pour v0.1.0 (un rpm seul, un
+    # AppImage+deb). `gh release edit v0.1.0` devenait alors ambigu.
+    # Un job unique avec `--bundles appimage,deb,rpm` produit une seule release
+    # contenant les trois fichiers.
+    name: binaires linux (appimage, deb, rpm)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: appimage
-            required: true
-          - target: deb
-            required: true
-          - target: rpm
-            required: false
     steps:
       - uses: actions/checkout@v4
 
@@ -41,17 +39,17 @@ jobs:
 
       - run: npm ci
 
-      - name: libs système Linux (§8)
+      - name: libs systeme Linux (spec §8)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
-      - name: vérifier la cohérence de version (§5.6)
+      - name: verifier la coherence de version (spec §5.6)
         run: npm run test:js
 
-      - name: construire ${{ matrix.target }}
+      - name: construire les trois bundles
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,13 +57,24 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Writer Deck ${{ github.ref_name }}
           releaseBody: |
-            Binaire Linux (${{ matrix.target }}) de Writer Deck.
+            Binaires Linux de Writer Deck.
 
-            Les documents sont des fichiers `.md` dans le dossier de votre choix.
-            Voir les notes de version et le panneau « À propos & téléchargements »
-            dans l'application.
+            Les documents sont des fichiers `.md` dans le dossier de votre choix :
+            ecrivez dans l'application, ou editez-les avec n'importe quel autre
+            editeur — les deux se voient.
+
+            | Format | Taille | Remarque |
+            |---|---|---|
+            | `.deb` | ~4 Mo | utilise les WebKitGTK du systeme |
+            | `.rpm` | ~4 Mo | idem, pour Fedora / openSUSE |
+            | `.AppImage` | ~79 Mo | WebKitGTK embarque, aucune installation |
+
+            **Statut : ce binaire n'a pas encore fait l'objet d'une recette
+            graphique.** Voir la section « Recette manuelle » de `DECISIONS.md`.
+          # Brouillon : on ne publie que lorsque le binaire a ete lance au moins
+          # une fois. Pour publier : `gh release edit <tag> --draft=false`.
           releaseDraft: true
-          args: --features app --bundles ${{ matrix.target }}
+          args: --features app --bundles appimage,deb,rpm
 
   smoke:
     name: le binaire compile et les tests passent
@@ -81,26 +90,25 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: libs système Linux (§8)
+      - name: libs systeme Linux (spec §8)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev
-      - name: construire le binaire sans empaquetage (§8)
+      - name: construire le binaire sans empaquetage (spec §8)
         run: cargo build --features app --release --bin writer-deck
         working-directory: src-tauri
-      # `working-directory` ne s'applique PAS aux étapes `run` : sans lui, le job
-      # tournait à la racine du dépôt et cherchait target/release/ au mauvais endroit
-      # (« No such file or directory » alors que cargo venait de compiler).
-      - name: taille du binaire (< 15 Mo, §10)
-        # `working-directory` ne s'applique pas aux `run` : on se place dans src-tauri.
+      - name: taille du binaire (< 15 Mo, spec §10)
+        # `working-directory` ne s'applique PAS aux etapes `run` : sans lui, ce job
+        # cherchait target/release/ a la racine du depot et echouait avec
+        # « No such file or directory » alors meme que cargo venait de compiler.
         working-directory: src-tauri
         run: |
           bin="target/release/writer-deck"
           if [ ! -f "$bin" ]; then
             echo "binaire introuvable : $PWD/$bin"
-            echo "ce que cargo a réellement produit :"
+            echo "ce que cargo a reellement produit :"
             ls -la target/release/ | head -20
             exit 1
           fi

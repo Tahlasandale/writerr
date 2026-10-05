@@ -35,37 +35,51 @@ Sur mobile, « ⋮ → Ajouter à l'écran d'accueil » installe l'application.
 ### Version bureau — binaire déjà compilé
 
 Les binaires sont publiés par GitHub Actions à chaque tag `v*`
-(AppImage, `.deb`, `.rpm`) : <https://github.com/Tahlasandale/writerr/releases>
+(AppImage, `.deb`, `.rpm`) : <https://github.com/Tahlasandale/writerr/releases/tag/v0.1.0>
 
-Depuis `v0.1.0` : **AppImage** (79 Mo, autonome) et **`.deb`** (4,4 Mo).
+Depuis `v0.1.0` : **AppImage** (79 Mo, autonome) et **`.deb`** (4,4 Mo). Le `.rpm`
+manque sur ce tag — il était dans un brouillon séparé, conséquence d'un bug du
+workflow de release corrigé depuis ; il revient au prochain tag.
 
 ```bash
-# AppImage : aucune installation
+# .deb (Debian/Ubuntu) — WebKitGTK vient du système, 4,4 Mo
+wget https://github.com/Tahlasandale/writerr/releases/download/v0.1.0/Writer.Deck_0.1.0_amd64.deb
+sudo apt install ./Writer.Deck_0.1.0_amd64.deb
+```
+
+```bash
+# ou AppImage : aucune installation, mais WebKitGTK embarqué, 79 Mo
 wget https://github.com/Tahlasandale/writerr/releases/download/v0.1.0/Writer.Deck_0.1.0_amd64.AppImage
 chmod +x Writer.Deck_0.1.0_amd64.AppImage && ./Writer.Deck_0.1.0_amd64.AppImage
 ```
 
-> L'AppImage fait 79 Mo parce qu'elle embarque WebKitGTK ; le `.deb` s'appuie sur
-> les bibliothèques du système et ne fait que 4,4 Mo. Choisissez le `.deb` si vous
-> êtes sur Debian/Ubuntu — `sudo apt install ./Writer.Deck_0.1.0_amd64.deb`.
-
 > ⚠️ **Statut de `v0.1.0` : binaire compilé et publié, mais jamais exécuté.**
 > Aucune recette graphique n'a été faite (il faut une session X11). Le premier
-> lancement est à considérer comme une phase de test.
+> lancement est à considérer comme une phase de test — les points à vérifier sont
+> listés dans [`DECISIONS.md`](DECISIONS.md).
 
 ### Version bureau — compiler chez soi
+
+**Rust** : deux seuils selon ce que tu compiles.
+
+| Ce que tu compiles | Rust requis | Pourquoi |
+|---|---|---|
+| la bibliothèque seule (`cargo test`, `cargo clippy`) | **≥ 1.85** | aucun crate Tauri n'est résolu |
+| le binaire (`--features app`) | **≥ 1.90** | `tauri-utils` l'exige |
+
+Si `which rustup` ne répond rien, rustup n'est pas dans le `PATH` :
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+grep -q 'cargo/env' ~/.bashrc || echo '. "$HOME/.cargo/env"' >> ~/.bashrc
+grep -q 'cargo/env' ~/.profile || echo '[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"' >> ~/.profile
+```
 
 **Prérequis Linux** (GTK/WebKit) :
 
 ```bash
 sudo apt install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev \
                     libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
-
-**Rust ≥ 1.88** — les crates Tauri refusent les versions plus anciennes :
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # si rustc --version < 1.88
 ```
 
 Puis :

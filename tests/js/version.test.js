@@ -36,6 +36,50 @@ test('le binaire Tauri est optionnel (cargo test sans libs GTK)', () => {
     'tauri-build est une build-dependency optionnelle');
 });
 
+test('le MSRV est coherent avec ce que chaque chemin exige', () => {
+  const cargo = read('src-tauri/Cargo.toml');
+  // Le coeur (cargo test / clippy) doit rester jouable sur un toolchain ancien.
+  assert.match(cargo, /rust-version = "1\.85"/,
+    'la bibliotheque seule declare 1.85 : 237 tests y passent');
+  // ...et le seuil du feature `app` doit etre ecrit quelque part, sinon personne
+  // ne comprend pourquoi `cargo build --features app` echoue sur 1.85.
+  assert.match(cargo, /1\.90/,
+    'le seuil 1.90 du binaire Tauri est documente dans Cargo.toml');
+  const lock = read('src-tauri/Cargo.lock');
+  assert.match(lock, /name = "tauri-utils"/,
+    'Cargo.lock contient bien le graphe Tauri : le seuil doit être justifié');
+  const readme = read('README.md');
+  assert.match(readme, /≥ 1\.85[\s\S]*≥ 1\.90/,
+    'le README annonce les deux seuils');
+});
+
+test('une seule release par tag (pas de matrice)', () => {
+  const rel = read('.github/workflows/release.yml');
+  // Une matrice de N jobs, tous appelant tauri-action avec le même tagName,
+  // crée N brouillons concurrents pour le même tag (constaté sur v0.1.0).
+  const bundle = rel.slice(rel.indexOf('bundle:'), rel.indexOf('smoke:'));
+  assert.ok(!/matrix:/.test(bundle), 'le job bundle ne doit pas être une matrice');
+  assert.match(bundle, /--bundles appimage,deb,rpm/,
+    'un seul job construit les trois formats');
+  assert.match(rel, /releaseDraft: true/,
+    'les releases restent en brouillon tant que le binaire n\'a pas été lancé');
+});
+test('le binaire Tauri est optionnel (cargo test sans libs GTK)', () => {
+  const cargo = read('src-tauri/Cargo.toml');
+  // le binaire ne doit pas être construit par défaut, sinon `cargo test`
+  // exigerait webkit2gtk sur chaque machine
+  assert.match(cargo, /\[\[bin\]\][\s\S]*required-features = \["app"\]/);
+  assert.match(cargo, /\[features\][\s\S]*default = \[\]/);
+  // build.rs DOIT exister : tauri::generate_context! lit des fichiers dans OUT_DIR.
+  // Mais tauri-build exige rustc 1.90, donc il doit rester optionnel, sinon
+  // `cargo test` est casse sur les machines en 1.85.
+  const buildRs = fs.readFileSync(path.join(ROOT, 'src-tauri', 'build.rs'), 'utf8');
+  assert.match(buildRs, /#\[cfg\(feature = "app"\)\]/,
+    "build.rs conditionne l'appel à tauri_build au feature app");
+  assert.match(cargo, /tauri-build = \{[^}]*optional = true/,
+    'tauri-build est une build-dependency optionnelle');
+});
+
 test('l’identifiant Tauri est fixé', () => {
   assert.equal(tauri.identifier, 'app.writerdeck.desktop');
 });
