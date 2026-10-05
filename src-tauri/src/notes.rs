@@ -238,7 +238,11 @@ pub fn delete_within(root: &Path, rel: &str, trasher: &dyn Trasher) -> Result<()
 ///
 /// Abstracted so tests can record the calls and assert that the file is still on
 /// disk, while production uses [`SystemTrasher`].
-pub trait Trasher {
+/// How a deletion reaches the system trash.
+///
+/// `Send + Sync` is required: the Tauri runtime holds the context in shared state
+/// and calls commands from the async runtime, not from the thread that created it.
+pub trait Trasher: Send + Sync {
     /// Moves `path` to the trash, or reports why it could not.
     fn trash(&self, path: &Path) -> Result<(), FsError>;
 }
@@ -421,7 +425,7 @@ fn normalise_newlines(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::sync::Mutex;
     use std::time::{Duration, SystemTime};
 
     use tempfile::TempDir;
@@ -430,19 +434,22 @@ mod tests {
     /// test can prove the note is still readable afterwards.
     #[derive(Default)]
     struct FakeTrasher {
-        calls: RefCell<Vec<PathBuf>>,
+        // Mutex et non RefCell : Trasher est Send + Sync (le runtime Tauri partage l'etat).
+        calls: Mutex<Vec<PathBuf>>,
         failure: Option<FsError>,
     }
 
     impl FakeTrasher {
         fn calls(&self) -> Vec<PathBuf> {
-            self.calls.borrow().clone()
+            self.calls.lock().map(|c| c.clone()).unwrap_or_default()
         }
     }
 
     impl Trasher for FakeTrasher {
         fn trash(&self, path: &Path) -> Result<(), FsError> {
-            self.calls.borrow_mut().push(path.to_path_buf());
+            if let Ok(mut c) = self.calls.lock() {
+                c.push(path.to_path_buf());
+            }
             match &self.failure {
                 Some(err) => Err(err.clone()),
                 None => Ok(()),

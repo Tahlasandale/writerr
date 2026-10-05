@@ -1,9 +1,9 @@
 //! Integration tests: the public API of `writer_deck` used the way the Tauri
 //! command layer will use it.
 
-use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
@@ -18,18 +18,20 @@ use writer_deck::FsError;
 /// Records the calls instead of trashing: proves the note is recoverable.
 #[derive(Default)]
 struct RecordingTrasher {
-    calls: RefCell<Vec<PathBuf>>,
+    calls: Mutex<Vec<PathBuf>>,
 }
 
 impl RecordingTrasher {
     fn calls(&self) -> Vec<PathBuf> {
-        self.calls.borrow().clone()
+        self.calls.lock().map(|c| c.clone()).unwrap_or_default()
     }
 }
 
 impl Trasher for RecordingTrasher {
     fn trash(&self, path: &Path) -> Result<(), FsError> {
-        self.calls.borrow_mut().push(path.to_path_buf());
+        if let Ok(mut c) = self.calls.lock() {
+            c.push(path.to_path_buf());
+        }
         Ok(())
     }
 }

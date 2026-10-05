@@ -117,6 +117,27 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
 - **Vérifié en CI** : `cargo check --features app` sur `ubuntu-latest` avec les libs §8
   (rustc récent) ; `cargo test` local en 1.85.1 sans libs.
 
+## Les commandes Tauri sont des wrappers, pas les fonctions testées
+
+- **Décision** : `commands::read_note(&Ctx, …)` reste pure et testée ; le binaire
+  expose `cmd_read_note(State<'_, App>, …)` qui déballe l'état et délègue.
+- **Pourquoi** : `&Ctx` n'implémente pas `CommandArg` — Tauri n'accepte que
+  `State<'_, T>`. Écrire les commandes directement avec `State` aurait rendu la
+  logique dechemin non testable sans GTK.
+
+## `Trasher` est `Send + Sync`, donc les doubles de test utilisent `Mutex`
+
+- **Décision** : `pub trait Trasher: Send + Sync`.
+- **Pourquoi** : le runtime Tauri partage l'état entre threads. Les doubles de test
+  utilisaient `RefCell`, qui n'est pas `Sync` : le trait est plus exigeant que les
+  tests ne l'étaient.
+
+## Icônes Tauri générées depuis l'icône PWA
+
+- **Décision** : les 14 PNG requis par `generate_context!` sont dérivés de
+  `web/icon-512.png` (ImageMagick), versionnés dans `src-tauri/icons/`.
+- **Pourquoi** : `tauri_build` échoue sans elles, avant même de compiler.
+
 ## Le watcher tranche les `Modify` sur l'état du disque
 
 - **Décision** : un `EventKind::Modify` ne dit pas *ce qui* a changé. On consulte le

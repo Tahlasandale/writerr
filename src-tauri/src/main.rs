@@ -16,7 +16,7 @@ use tauri::Manager; // state(), manage(), get_webview_window()
 use writer_deck::commands::{self, Ctx};
 use writer_deck::notes::SystemTrasher;
 use writer_deck::watcher::{FsWatcher, WatchEvent, DEBOUNCE};
-use writer_deck::{config, selfwrites::SelfWrites};
+use writer_deck::{config, selfwrites::SelfWrites, FsError};
 
 /// État global partagé par les commandes et le watcher.
 struct App {
@@ -54,6 +54,105 @@ fn start_watcher(app: &tauri::AppHandle) {
     });
 }
 
+/* ------------------------------------------------------------------ *
+ * Adaptateurs Tauri
+ *
+ * Les fonctions de `commands` sont pures et prennent `&Ctx`. Tauri, lui, n'accepte
+ * qu'un `State<'_, T>` : ces wrappers font la traduction. Toute la logique testable
+ * reste dans `commands` (tests/commands.rs), ces wrappers ne font que déballer.
+ * ------------------------------------------------------------------ */
+/* Chaque wrapper renvoie le payload tel quel ; `impl Serialize` évite d'écrire
+13 types de retour distincts dans la signature. */
+macro_rules! wrap {
+    ($name:ident, $f:ident) => {
+        #[tauri::command]
+        fn $name(
+            state: tauri::State<'_, App>,
+        ) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
+            $f(&state.ctx)
+        }
+    };
+}
+wrap!(cmd_list_tree, commands::list_tree);
+wrap!(cmd_get_config, commands::get_config);
+wrap!(cmd_app_version, commands::app_version);
+
+macro_rules! wrap1 {
+    ($name:ident, $f:ident, $arg:ident : $ty:ty) => {
+        #[tauri::command]
+        fn $name(
+            state: tauri::State<'_, App>,
+            $arg: $ty,
+        ) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
+            $f(&state.ctx, $arg)
+        }
+    };
+}
+wrap1!(cmd_read_note, commands::read_note, rel: String);
+wrap1!(cmd_rename, commands::rename, rel: String);
+wrap1!(cmd_delete, commands::delete, rel: String);
+wrap1!(cmd_create_dir, commands::create_dir, rel: String);
+wrap1!(cmd_set_config, commands::set_config, cfg: config::Config);
+wrap1!(cmd_open_external, commands::open_external, url: String);
+
+#[tauri::command]
+fn cmd_write_note(
+    state: tauri::State<'_, App>,
+    rel: String,
+    content: String,
+) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
+    commands::write_note(&state.ctx, &rel, &content)
+}
+
+#[tauri::command]
+fn cmd_create_note(
+    state: tauri::State<'_, App>,
+    dir: String,
+    title: String,
+) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
+    commands::create_note(&state.ctx, &dir, &title)
+}
+
+/// Le dialogue natif vit dans le plugin `dialog`, cote JS : cette commande ne fait
+/// que refuser un etat sans racine, ce qui declenche l'ecran « Choisir le dossier ».
+#[tauri::command]
+fn pick_root(
+    state: tauri::State<'_, App>,
+) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
+    match state.ctx.root.clone() {
+        Some(p) => Ok(commands::Ok_ {
+            ok: true,
+            data: Some(p),
+        }),
+        None => Err(commands::Err_::from(FsError::NoRoot)),
+    }
+}
+
+/// Fixe la racine choisie par le dialogue natif. `None` = annulation -> `no_root`.
+#[tauri::command]
+fn set_root(
+    state: tauri::State<'_, App>,
+    root: Option<String>,
+) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
+    match root {
+        Some(p) => {
+            let path = PathBuf::from(p);
+            if !path.is_dir() {
+                return Err(commands::Err_::from(FsError::NotFound));
+            }
+            // `State` donne un &mut interieur : on ecrit la racine sans prendre le
+            // verrou config (champs disjoints, donc pas de deadlock).
+            let slot = &mut state.ctx.root;
+            *slot = Some(path);
+            Ok(commands::Ok_ {
+                ok: true,
+                data: Some(()),
+            })
+        }
+        None => Err(commands::Err_::from(FsError::NoRoot)),
+    }
+}
+
 fn build() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -66,9 +165,10 @@ fn build() -> tauri::Builder<tauri::Wry> {
             // Le registre anti-boucle est partage : une seule instance, celle que
             // le watcher consulte ET que les commandes alimentent via Ctx.
             let self_writes = Arc::new(Mutex::new(SelfWrites::new()));
+            // MutexGuard n'est pas Clone : on clone l'intérieur déréférencé.
             let for_ctx = self_writes
                 .lock()
-                .map(|g| g.clone())
+                .map(|g| SelfWrites::clone(&g))
                 .unwrap_or_else(|_| SelfWrites::new());
 
             app.manage(App {
@@ -97,19 +197,19 @@ fn build() -> tauri::Builder<tauri::Wry> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::list_tree,
-            commands::read_note,
-            commands::write_note,
-            commands::create_note,
-            commands::create_dir,
-            commands::rename,
-            commands::delete,
-            commands::get_config,
-            commands::set_config,
-            commands::pick_root,
-            commands::set_root,
-            commands::app_version,
-            commands::open_external,
+            cmd_list_tree,
+            cmd_read_note,
+            cmd_write_note,
+            cmd_create_note,
+            cmd_create_dir,
+            cmd_rename,
+            cmd_delete,
+            cmd_get_config,
+            cmd_set_config,
+            pick_root,
+            set_root,
+            cmd_app_version,
+            cmd_open_external,
         ])
 }
 
