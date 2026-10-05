@@ -181,6 +181,16 @@ gpg --batch --yes --pinentry-mode loopback --passphrase '' \
 gpg --batch --verify "$dist/InRelease" >/dev/null 2>&1 \
   || { echo "erreur: l'InRelease produite ne se vérifie pas" >&2; exit 1; }
 echo "InRelease auto-vérifiée"
+
+# `gpg --import` démarre un agent qui SURVIT au script. Dans un GNUPGHOME
+# jetable il ne pourra jamais être réutilisé : sans ce kill, chaque exécution
+# fuit un daemon, et la machine finit par manquer de sockets — ce qui casse
+# ensuite des tests sans rapport, ici ceux du watcher Rust avec un EMFILE
+# incompréhensible. Observé : 54 agents survivants après une trentaine de
+# passages, et 3 tests Rust en échec sur « Too many open files ».
+if command -v gpgconf >/dev/null 2>&1; then
+  gpgconf --homedir "$GNUPGHOME" --kill all >/dev/null 2>&1 || true
+fi
 unset GNUPGHOME
 
 # --- 4. publication ---------------------------------------------------------

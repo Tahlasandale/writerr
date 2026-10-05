@@ -65,6 +65,22 @@ function cleJetable() {
   return { armored: armored.toString(), env, home };
 }
 
+/**
+ * `gpg --import` démarre un agent qui survit au processus. Dans un GNUPGHOME
+ * jetable il ne peut jamais être réutilisé : sans ce kill, chaque exécution de
+ * la suite fuit un daemon, et la machine finit par manquer de sockets — ce qui
+ * fait échouer des tests sans rapport, en l'occurrence ceux du watcher Rust avec
+ * un `TooManyOpenFiles`. Constaté : 54 agents survivants, et 3 tests Rust rouges
+ * sur un simple `cargo test` alors que rien n'avait changé côté Rust.
+ */
+function tuerAgent(home) {
+  try {
+    execFileSync('gpgconf', ['--homedir', home, '--kill', 'all'], { stdio: 'ignore' });
+  } catch {
+    // gpgconf absent sur un système minimal : l'agent partira avec le tmpdir.
+  }
+}
+
 /** .deb minimal, dépendances paramétrables. */
 function fabriquerDeb(dir, depends) {
   const pkg = path.join(dir, 'pkg');
@@ -111,6 +127,7 @@ function genererDepot(depends = 'libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0
     const site = /\[dry-run\] site : (.+)/.exec(out)[1].trim();
     return { site, sortie: out, cle: armored };
   } finally {
+    tuerAgent(home);
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(debDir, { recursive: true, force: true });
   }
@@ -153,6 +170,7 @@ test('la clé publique est versionnée et exploitable', () => {
     assert.deepEqual(fprs, [FPR_PUBLIE],
       'la clé versionnée doit être exactement celle dont l\'empreinte est publiée');
   } finally {
+    tuerAgent(home);
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
@@ -221,6 +239,7 @@ test('l\'InRelease est réellement signé et vérifiable', { skip: !peutGenerer 
       execFileSync('gpg', ['--batch', '--verify', path.join(site, 'dists/stable/InRelease')],
         { env: { ...process.env, GNUPGHOME: home }, stdio: 'pipe' });
     } finally {
+      tuerAgent(home);
       fs.rmSync(home, { recursive: true, force: true });
     }
   } finally {
@@ -248,6 +267,7 @@ test('le script refuse de publier un .deb à la mauvaise dépendance', { skip: !
       encoding: 'utf8',
     }), /mauvaise dépendance GTK3/);
   } finally {
+    tuerAgent(home);
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(debDir, { recursive: true, force: true });
   }
