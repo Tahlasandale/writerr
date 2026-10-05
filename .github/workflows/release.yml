@@ -100,6 +100,25 @@ jobs:
           gh release upload "$TAG" "$deb" --clobber -R "$GITHUB_REPOSITORY"
           echo "asset réécrasé avec un Depends: installable"
 
+      # Outils de génération du dépôt apt. apt-utils (apt-ftparchive) et dpkg-dev
+      # (dpkg-scanpackages) ne sont PAS installés d'origine sur un runner Ubuntu.
+      - name: outils du dépôt APT
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils dpkg-dev xz-utils
+
+      # Publie le dépôt apt signé sur gh-pages : `sudo apt install writer-deck`,
+      # puis `sudo apt update && sudo apt upgrade writer-deck` à chaque tag.
+      # La clé privée vit dans le secret APT_GPG_PRIVATE_KEY ; la publique est
+      # versionnée (writerr-apt-key.asc).
+      - name: publier le dépôt APT signé
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: .github/scripts/publish-apt-repo.sh
+
   smoke:
     name: le binaire compile et les tests passent
     runs-on: ubuntu-latest

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writer Deck — dépôt APT</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 44rem; padding: 3rem 1.5rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  p.sub { margin: 0 0 2rem; opacity: .7; }
+  pre { background: rgba(127,127,127,.12); padding: .9rem 1.1rem; border-radius: 6px; overflow-x: auto; font-size: .9rem; }
+  code { font-family: ui-monospace, monospace; }
+  a { color: inherit; }
+  hr { border: 0; border-top: 1px solid rgba(127,127,127,.3); margin: 2.5rem 0; }
+  footer { font-size: .85rem; opacity: .7; }
+</style>
+</head>
+<body>
+<h1>Writer Deck — dépôt APT</h1>
+<p class="sub">Signé GPG. Le contenu de <code>dists/</code> n'existe qu'après une version publiée.</p>
+
+<p>Installation sur Debian / Ubuntu&nbsp;:</p>
+<pre><code>sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://Tahlasandale.github.io/writerr/writerr-apt-key.asc \
+  | sudo tee /etc/apt/keyrings/writerr-apt-keyring.asc &gt;/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/writerr-apt-keyring.asc] \
+https://Tahlasandale.github.io/writerr stable main" \
+  | sudo tee /etc/apt/sources.list.d/writerr.list
+sudo apt update
+sudo apt install writer-deck</code></pre>
+
+<p>Mise à jour&nbsp;:</p>
+<pre><code>sudo apt update &amp;&amp; sudo apt upgrade writer-deck</code></pre>
+
+<hr>
+<footer>
+  Clé de signature&nbsp;: <code>10433B2A24900E8F5A6FBA660CFFC7C5CB907F46</code><br>
+  Code source et journal des décisions&nbsp;:
+  <a href="https://github.com/Tahlasandale/writerr">github.com/Tahlasandale/writerr</a>
+</footer>
+</body>
+</html>
