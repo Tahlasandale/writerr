@@ -115,3 +115,18 @@ test('la CSP interdit le réseau et n’expose pas fs/shell', () => {
   assert.ok(!/"fs:/.test(flat), 'plugin fs non exposé');
   assert.ok(!/"shell:/.test(flat), 'plugin shell non exposé');
 });
+test('aucun test ne code la version en dur', () => {
+  // Un littéral de version dans un test casse à chaque bump — c'est exactement
+  // ce qui a fait échouer T11 (e2e) et deux tests Rust au passage de 0.1.0 à
+  // 0.1.1, pour de mauvaises raisons. Les tests doivent lire la vraie source.
+  const v = cfg.version;
+  const fichiers = ['tests/writerr.test.js', 'src-tauri/tests/commands.rs'];
+  for (const f of fichiers) {
+    const src = read(f);
+    for (const q of [`'${v}'`, `"${v}"`]) {
+      assert.ok(!src.includes(q),
+        `${f} contient la version en dur (${q}). Lire web/config.js — ou, pour `
+        + 'le Rust, package.json via include_str! — plutôt qu\'une constante.');
+    }
+  }
+});

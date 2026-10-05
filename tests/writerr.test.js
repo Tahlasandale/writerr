@@ -7,6 +7,9 @@ const path = require('path');
 const puppeteer = require('puppeteer-core');
 const { serve } = require('./serve');
 const { executablePath } = require('./chrome');
+// Source de vérité de la version : le test s'appelait « version affichée =
+// WD_CONFIG » mais comparait à une constante, donc cassait à chaque bump.
+const WD_CONFIG = require('../web/config.js');
 
 const ART = path.join(__dirname, '.tmp');
 fsx.mkdirSync(ART, { recursive: true });
@@ -536,7 +539,7 @@ const want = n => !only || n.includes(only);
     }));
     check('T9 panneau À propos ouvert, tiroir Documents fermé', about.open && about.docsClosed, about);
     check('T10 liens GitHub corrects', about.links.includes('https://github.com/Tahlasandale/writerr') && about.links.includes('https://github.com/Tahlasandale/writerr/releases/latest') && about.links.includes('https://github.com/Tahlasandale/writerr/issues'), about.links);
-    check('T11 version affichée = WD_CONFIG', about.version === '0.1.0', about.version);
+    check('T11 version affichée = WD_CONFIG', about.version === WD_CONFIG.version, about.version);
     check('T12 raccourcis et commandes listés', /Entrée/.test(about.text) && /Titre 1/.test(about.text) && /Case à cocher/.test(about.text), about.text.slice(0, 200));
     check('T13 aucun lien OWNER', !about.links.some(h => /OWNER/.test(h || '')), about.links);
 
@@ -626,7 +629,7 @@ const want = n => !only || n.includes(only);
           case 'create_dir': return Promise.resolve({ id: args.rel ? args.rel + '/Nouveau' : 'Nouveau' });
           case 'rename': return Promise.resolve({ id: args.rel.replace(/\/[^/]+$/, '') + '/' + args.toTitle + '.md' });
           case 'delete': delete files[args.rel]; return Promise.resolve(null);
-          case 'app_version': return Promise.resolve('0.1.0');
+          case 'app_version': return Promise.resolve(WD_CONFIG.version);
           case 'open_external': return Promise.resolve(args.url);
           default: return Promise.resolve(tree);
         }
