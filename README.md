@@ -32,26 +32,50 @@ Rien à installer. Choisissez :
 
 Sur mobile, « ⋮ → Ajouter à l'écran d'accueil » installe l'application.
 
-### Version bureau — binaire déjà compilé
+### Version bureau — Debian / Ubuntu (mise à jour par apt)
 
-Les binaires sont publiés par GitHub Actions à chaque tag `v*`
-(AppImage, `.deb`, `.rpm`) : <https://github.com/Tahlasandale/writerr/releases/tag/v0.1.0>
-
-Depuis `v0.1.0` : **AppImage** (79 Mo, autonome) et **`.deb`** (4,4 Mo). Le `.rpm`
-manque sur ce tag — il était dans un brouillon séparé, conséquence d'un bug du
-workflow de release corrigé depuis ; il revient au prochain tag.
+Le paquet est publié dans un **dépôt APT signé**, régénéré à chaque version :
 
 ```bash
-# .deb (Debian/Ubuntu) — WebKitGTK vient du système, 4,4 Mo
-wget https://github.com/Tahlasandale/writerr/releases/download/v0.1.0/Writer.Deck_0.1.0_amd64.deb
-sudo apt install ./Writer.Deck_0.1.0_amd64.deb
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://Tahlasandale.github.io/writerr/writerr-apt-key.asc \
+  | sudo tee /etc/apt/keyrings/writerr-apt-keyring.asc >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/writerr-apt-keyring.asc] https://Tahlasandale.github.io/writerr stable main" \
+  | sudo tee /etc/apt/sources.list.d/writerr.list >/dev/null
+
+sudo apt update
+sudo apt install writer-deck
 ```
 
+Ensuite, les mises à jour sont ordinaires :
+
 ```bash
-# ou AppImage : aucune installation, mais WebKitGTK embarqué, 79 Mo
+sudo apt update && sudo apt upgrade writer-deck
+```
+
+Le dépôt est signé GPG (empreinte `10433B2A24900E8F5A6FBA660CFFC7C5CB907F46`) ;
+`apt` refuse de l'utiliser si la signature ne correspond pas. `signed-by=` évite
+d'ajouter la clé à la liste des paquets approuvés du système.
+
+> Cette procédure est disponible à partir de **`v0.1.1`**. Sur `v0.1.0`, le
+> `.deb` déclare une dépendance GTK3 qui n'existe plus sur Debian 13 et ne peut
+> donc pas s'installer — c'est corrigé, mais la version publiée est antérieure.
+
+Pour désinstaller : `sudo apt remove writer-deck` (et `rm /etc/apt/sources.list.d/writerr.list`).
+
+### Version bureau — autres formats
+
+**AppImage**, sans installation (WebKitGTK embarqué, 79 Mo) :
+
+```bash
 wget https://github.com/Tahlasandale/writerr/releases/download/v0.1.0/Writer.Deck_0.1.0_amd64.AppImage
 chmod +x Writer.Deck_0.1.0_amd64.AppImage && ./Writer.Deck_0.1.0_amd64.AppImage
 ```
+
+**`.deb` / `.rpm` à la main**, sans passer par apt : <https://github.com/Tahlasandale/writerr/releases>
+
+> L'AppImage fait 79 Mo parce qu'elle embarque WebKitGTK ; le `.deb` s'appuie sur
+> les bibliothèques du système et ne fait que 4,4 Mo.
 
 > ⚠️ **Statut de `v0.1.0` : binaire compilé et publié, mais jamais exécuté.**
 > Aucune recette graphique n'a été faite (il faut une session X11). Le premier

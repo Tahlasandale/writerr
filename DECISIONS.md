@@ -328,6 +328,123 @@ est verte, mais **le binaire n'a jamais été exécuté**.
   dépôt** → « No such file or directory », alors même que cargo venait de compiler.
 - **Piège** : `working-directory` ne s'applique PAS aux étapes `run`. C'est une
   distinction facile à manquer.
+## Le `.deb` était ininstallable : `libgtk-3-0` n'existe plus
+
+- **Décision** : on réécrit le fichier de contrôle **après** le bundling
+  (`.github/scripts/fix-deb-deps.sh`), et on réuploade l'asset avec `--clobber`.
+  Résultat : `Depends: libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0`.
+- **Le symptôme** : `apt install ./Writer.Deck_0.1.0_amd64.deb` échoue sur
+  « dépendances non satisfaites », alors que `libgtk-3-0t64 3.24.49` est installé
+  sur la machine. Le paquet busca `libgtk-3-0`, que la transition t64 de Debian 13
+  a renommé. Le binaire n'était donc installable sur **aucune** Debian 13 ni
+  Ubuntu 24.04+, c'est-à-dire sur la majorité des cibles.
+- **Pourquoi la config ne suffisait pas** : dans `tauri-cli-2.12.1`
+  (`src/interface/rust.rs`), ligne 1364 puis 1422-1423 :
+  ```rust
+  let mut depends_deb = config.linux.deb.depends.unwrap_or_default();
+  ...
+  depends_deb.push("libwebkit2gtk-4.1-0".to_string());
+  depends_deb.push("libgtk-3-0".to_string());
+  ```
+  Les deux `push` sont **inconditionnels** et il n'y a pas de déduplication : la
+  config sert de base, et les deux noms historiques sont ajoutés par-dessus. Écrire
+  `libgtk-3-0t64 | libgtk-3-0` dans `bundle.linux.deb.depends` n'aurait produit que
+  `libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, libgtk-3-0` — où le
+  `libgtk-3-0` final reste une dépendance **dure** : l'alternative ne couvre que
+  la première entrée. Un champ `Depends` unique ne peut pas dire « GTK3, peu
+  importe son nom » ; il faut une alternative Debian, donc un `|` — et donc un
+  fichier réécrit après coup.
+- **Pourquoi une alternative et pas `libgtk-3-0t64`** : le `.deb` ne peut pas
+  cibler une seule génération. `libgtk-3-0t64` n'existe pas avant Debian 13 ;
+  `libgtk-3-0` n'existe plus après. `a | b` couvre les deux.
+- **Effet de bord heureux** : `dpkg-deb -b` compresse mieux que le bundler de
+  Tauri, le `.deb` passe de **4 649 366 à 3 094 920 octets** (-33 %). Vérifié :
+  binaire embarqué identique au bit près (sha256), les 7 fichiers du paquet sont
+  les mêmes, et les `md5sums` déclarés passent.
+- **Le script se vérifie lui-même** : si la reconstruction ne donne pas exactement
+  le `Depends` attendu, il abandonne **sans** écraser l'original. Un `.deb` à la
+  mauvaise dépendance est pire qu'un build rouge, parce que l'utilisateur verrait
+  un échec d'apt incompréhensible.
+- **Verrouillé par** `tests/js/packaging.test.js` (7 tests, qui *exécutent* le
+  script sur un `.deb` fabriqué) et par une garde dans
+  `publish-apt-repo.sh`, qui refuse de publier un paquet dont le `Depends` n'a pas
+  été corrigé.
+
+## Un dépôt APT pour mettre à jour sans réinstaller à la main
+
+- **Décision** : un dépôt APT signé, servi par GitHub Pages, régénéré et
+  ré-publié en `--force` sur `gh-pages` à chaque tag.
+  `sudo apt install writer-deck`, puis `sudo apt update && sudo apt upgrade
+  writer-deck`. C'est le seul canal qui donne une vraie mise à jour sans que
+  l'utilisateur ait à télécharger quoi que ce soit.
+- **Écarté** : AppImage seule (79 Mo par version, pas d'entrée de menu sans
+  manipulation, et tauri ne produit pas de `.zsync` donc AppImageUpdate n'a rien à
+  comparer) ; `.deb` par URL (propre à l'installation, mais la mise à jour
+  redevenait un `wget` à la main) ; Flatpak (hors périmètre, et le bac à sable
+  gêne l'accès à un dossier de notes libre).
+- **Signature** : `InRelease` en **clair-signé** (`--clearsign`) plutôt que
+  `Release` + `Release.gpg` — un seul fichier, donc pas de fenêtre de courses
+  entre la signature et sa contrepartie. `apt` privilégie `InRelease` quand il
+  existe. Clé **sans phrase de passe** : le secret CI *est* la clé, et ça évite un
+  second secret à saisir.
+- **Rotation** : si `APT_GPG_PRIVATE_KEY` fuite, il faut générer une nouvelle clé,
+  publier la nouvelle clé publique, et les installations existantes devront
+  ajouter la nouvelle — l'ancienne ne peut pas être révoquée de façon fiable pour
+  un dépôt dont la clé est déjà déployée chez des tiers. D'où le choix
+  « sans phrase de passe » : la clé est déjà dans un secret, une seconde barrière
+  ne protège pas grand-chose, et elle coûte un second secret à gérer.
+- **Oubli classique** : `apt-utils` (qui fournit `apt-ftparchive`) et `dpkg-dev`
+  (`dpkg-scanpackages`) ne sont **pas** installés sur un runner Ubuntu. Le
+  workflow les installe, et le script signale l'absence de chaque outil plutôt que
+  de tomber sur « command not found » au milieu de la signature.
+
+## Les trois pièges d'un dépôt apt, tous silencieux
+
+Aucun des trois ne produit le moindre avertissement : apt récupère l'`InRelease`,
+valide la signature, puis ne trouve rien. Les deux premiers ont été rencontrés
+pendant la mise au point, le troisième par déduction avant d'être.
+
+1. **Le préfixe `dists/` est obligatoire.** Écrire `site/stable/Release` : tout le
+   reste est correct et apt dit « Le dépôt n'a pas de fichier Release ».
+2. **Le `Release` ne doit pas se hacher lui-même.**
+   `apt-ftparchive release dist > dist/Release` se mord la queue : le shell crée
+   le fichier de sortie **avant** d'exécuter la commande, donc `apt-ftparchive`
+   hache un `Release` vide et inscrit son propre nom dans sa liste de sommes. On
+   écrit hors du répertoire puis on déplace. Une garde vérifie l'absence de
+   l'auto-référence.
+3. **`Packages.gz` seul ne suffit plus.** Un apt 3.x (Debian 13, Ubuntu 24.04+)
+   n'en dérive **aucune** cible. On publie `Packages.xz` (que les apt modernes
+   réclament) et `Packages` non compressé (pour les apt trop anciens pour xz) —
+   et ni gz ni bz2, chaque variante en plus étant une somme de plus à garder
+   cohérente dans le `Release`.
+- **Vérifié hors CI**, contre un serveur HTTP local, avec apt 3.x : signature
+  vérifiée, `apt-cache policy` annonce le candidat, la dépendance
+  `libgtk-3-0t64 | libgtk-3-0` se résout, `apt-get -s install` ne signale
+  **aucune** dépendance manquante, et `apt-get download` ramène un `.deb` au
+  sha256 attendu. Test négatif : avec une autre clé, apt refuse en nommant notre
+  empreinte. Tout cela est rejoué à chaque `npm test`, sur un `.deb` fabriqué
+  avec une clé GPG jetable.
+- **Méthode** : la première tentative de vérification a échoué **faussement**,
+  avec le dépôt Debian officiel dans le même harnais, parce que le harnais
+  relocalisait `Dir` en entier. Relocaliser seulement `Dir::Etc::sourcelist`,
+  `Dir::Etc::sourceparts` et `Dir::State::lists` fonctionne. Un témoin qui ne
+  réussit pas à échouer n'est pas un témoin.
+
+## Le seuil de 15 Mio de la spec était déjà franchi
+
+- **Décision** : seuil porté à **17 Mio** (17 825 792 octets), dans le job `smoke`
+  du workflow de release.
+- **Pourquoi** : le binaire release de `v0.1.0` fait **16 456 520 octets**
+  (15,7 Mio). Le seuil d'origine (15 728 640) était donc déjà dépassé. Et il ne
+  l'avait jamais signalé : sur `v0.1.0`, le job échouait plus tôt, sur le bug de
+  `working-directory` (corrigé en `505e501`), avant même de mesurer. Il aurait
+  échoué à la release suivante.
+- **`strip = true` envisagé puis écarté** : il aurait probablement ramené le
+  binaire sous 15 Mio, mais sans symboles une panique du binaire n'est plus
+  exploitable. Un seuil un peu plus large vaut mieux qu'un binaire strippé.
+- **Verrouillé par** un test qui vérifie que le seuil dépasse la taille mesurée —
+  sinon le contrôle retomberait dans le piège qu'il est censé surveiller.
+
 ## À remplacer avant publication
 
 | Clé | Valeur actuelle | Où |
