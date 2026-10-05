@@ -117,13 +117,63 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
 - **Vérifié en CI** : `cargo check --features app` sur `ubuntu-latest` avec les libs §8
   (rustc récent) ; `cargo test` local en 1.85.1 sans libs.
 
+## Le nom d'une commande Tauri est le nom de la fonction — et ça cassait TOUT
+
+- **Décision** : les wrappers de `main.rs` portent le **même nom** que les
+  commandes que le JS invoque. Le préfixe `cmd_` a été supprimé partout.
+- **Le bug** : `#[tauri::command] fn cmd_read_note(...)` enregistre la commande
+  sous le nom **`cmd_read_note`** — Tauri dérive le nom de la fonction, il ne le
+  retire pas. Vérifié dans la source du macro, pas supposé :
+  `tauri-macros-2.7.1/src/command/wrapper.rs:294-299`
+  ```rust
+  let command_name_value = if let RenamePolicy::Rename(ref rename) = attrs.rename {
+    quote!(#rename)
+  } else {
+    let ident = &function.sig.ident;
+    quote!(stringify!(#ident))
+  };
+  ```
+  Or `web/app.js` invoque `read_note`, `write_note`, `create_note`, `delete`,
+  `rename`, `list_tree`, `get_config`, `set_config`, `app_version`,
+  `open_external`… **sans le préfixe**.
+- **Mesuré avant correction** : l'intersection des noms invoqués par le JS et des
+  noms enregistrés dans `generate_handler!` ne contenait **qu'une seule**
+  commande, `pick_root` — celle qui, de surcroît, ne faisait rien d'utile. Les
+  onze autres étaient injoignables. C'est la cause exacte de « aucune
+  interaction avec le filesystem ne marche », et elle est **indépendante** du
+  dialogue natif : même avec un dialogue correct, aucune commande n'aurait
+  répondu.
+- **Pourquoi 454 tests ne l'ont pas vu** : la suite teste `commands::*`, qui sont
+  des fonctions pures jamais enregistrées. Le bureau passe par les *wrappers*, qui
+  n'avaient **aucune couverture par construction**. Le groupe e2e « bureau
+  simulé » (U) simule `invoke` en JavaScript, donc il ne peut pas voir un nom de
+  commande faux.
+- **Verrouillé par** `tests/js/tauri-wiring.test.js`, dont le test 2 confronte le
+  JS au Rust. Il faut lire les noms **dans les chaînes autant que dans les
+  appels** : cinq des douze commandes (`get_config`, `set_config`, `list_tree`,
+  `create_dir`, `app_version`) ne sont invoquées que par la boucle de
+  `web/app.js:213`. Un extracteur à une seule passe en voit 7 sur 12 — et le
+  test est vert pendant que le bureau est mort.
+- **Leçon de méthode** : l'expérience « on renverse le correctif et on vérifie que
+  le test rougit » est ce qui a fait la différence ici. Renommer des deux côtés
+  laisse les deux ensembles Rust cohérents : le test 1 reste vert, seul le
+  test 2 voit la faute. Un garde non testé peut avoir l'air de couvrir.
+
 ## Les commandes Tauri sont des wrappers, pas les fonctions testées
 
 - **Décision** : `commands::read_note(&Ctx, …)` reste pure et testée ; le binaire
-  expose `cmd_read_note(State<'_, App>, …)` qui déballe l'état et délègue.
+  expose `read_note(State<'_, App>, …)` qui déballe l'état et délègue. **Le
+  wrapper porte le même nom que la commande**, sans préfixe `cmd_` : voir
+  « Le nom d'une commande Tauri est le nom de la fonction ».
 - **Pourquoi** : `&Ctx` n'implémente pas `CommandArg` — Tauri n'accepte que
   `State<'_, T>`. Écrire les commandes directement avec `State` aurait rendu la
   logique dechemin non testable sans GTK.
+- **Corrigé depuis** : `set_root` refaisait la validation (`is_dir`) et l'écriture
+  de `c.root` **dans le binaire**, alors que `commands::set_root` existait, était
+  testé, et n'était jamais appelé par le binaire. Les deux implémentations
+  divergeaient déjà : ici `None` renvoyait `no_root` sans toucher la racine,
+  là-bas `c.root` repassait à `None` avant l'erreur. Le wrapper délègue
+  aujourd'hui et n'ajoute que la persistance.
 
 ## `Trasher` est `Send + Sync`, donc les doubles de test utilisent `Mutex`
 
