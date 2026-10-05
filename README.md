@@ -36,6 +36,8 @@ Sur mobile, « ⋮ → Ajouter à l'écran d'accueil » installe l'application.
 
 Le paquet est publié dans un **dépôt APT signé**, régénéré à chaque version :
 
+([Doc ici]([(https://tahlasandale.github.io/writerr/)])
+
 ```bash
 sudo mkdir -p /etc/apt/keyrings
 curl -fsSL https://Tahlasandale.github.io/writerr/writerr-apt-key.asc \
