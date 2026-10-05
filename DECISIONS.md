@@ -445,6 +445,34 @@ pendant la mise au point, le troisième par déduction avant d'être.
 - **Verrouillé par** un test qui vérifie que le seuil dépasse la taille mesurée —
   sinon le contrôle retomberait dans le piège qu'il est censé surveiller.
 
+## `v0.1.1` est published mais son run de release est rouge
+
+- **Décision** : on ne réécrit pas le tag. On sort `v0.1.2`, qui ne corrige que
+  le test en cause.
+- **Ce qui s'est passé** : le bump de version en `0.1.1` a fait échouer `T11`
+  (e2e), qui comparait la version affichée à la constante `'0.1.0'`. Le job
+  `smoke` de la release est donc rouge, alors que le job `bundle` est vert et que
+  les trois binaires sont bons.
+- **Pourquoi ne pas re-tagger** : c'est tentant, mais réécrire un tag déjà poussé
+  casse la règle « on ne réécrit pas l'historique » qu'on s'est donnée. Le coût d'un
+  `0.1.2` qui ne change que des tests est faible ; le coût d'un tag réécrit
+  n'est jamais nul (les gens qui l'ont déjà récupéré gardent l'ancien objet).
+- **Ce qui reste vrai malgré le rouge** : le job rouge est un *contrôle*, pas un
+  livrable. Vérifié sur les artefacts réellement produits —
+  - le `.deb` de la release déclare bien
+    `Depends: libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0` ;
+  - il est **identique au bit près** (sha256) à celui servi par le dépôt APT ;
+  - `apt-get -s install writer-deck` sur le dépôt **de production** annonce
+    `Candidate: 0.1.1` et ne signale aucune dépendance manquante.
+- **Résolu en `0c30fc9`** : `T11` lit `web/config.js`, le faux backend desktop
+  renvoie `WD_CONFIG.version`, et un test interdit désormais la réapparition d'un
+  littéral de version dans les suites e2e et Rust. C'est ce même défaut qui avait
+  fait échouer deux tests Rust au bump précédent.
+- **Conséquence assumée** : le dépôt APT est public, donc le `.deb` est
+  téléchargeable **avant** la recette manuelle. La règle « rien de publié sans
+  avoir été exécuté » ne tient plus pour le paquet : l'utilisateur ne peut tester
+  que s'il peut installer. La release GitHub, elle, reste en brouillon.
+
 ## À remplacer avant publication
 
 | Clé | Valeur actuelle | Où |
