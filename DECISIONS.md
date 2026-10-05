@@ -137,6 +137,9 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
 - **Décision** : les 14 PNG requis par `generate_context!` sont dérivés de
   `web/icon-512.png` (ImageMagick), versionnés dans `src-tauri/icons/`.
 - **Pourquoi** : `tauri_build` échoue sans elles, avant même de compiler.
+- **Détail qui a coûté un round-trip CI** : Tauri exige des PNG **RGBA**. Les
+  icônes régénérées avec `convert … PNG32:` ; sans `-alpha on`, l'erreur est
+  « icon …/32x32.png is not RGBA ».
 
 ## Le watcher tranche les `Modify` sur l'état du disque
 

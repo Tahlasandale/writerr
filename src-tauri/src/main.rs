@@ -61,46 +61,31 @@ fn start_watcher(app: &tauri::AppHandle) {
  * qu'un `State<'_, T>` : ces wrappers font la traduction. Toute la logique testable
  * reste dans `commands` (tests/commands.rs), ces wrappers ne font que déballer.
  * ------------------------------------------------------------------ */
-/* Chaque wrapper renvoie le payload tel quel ; `impl Serialize` évite d'écrire
-13 types de retour distincts dans la signature. */
-macro_rules! wrap {
-    ($name:ident, $f:ident) => {
-        #[tauri::command]
-        fn $name(
-            state: tauri::State<'_, App>,
-        ) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
-            $f(&state.ctx)
-        }
-    };
-}
-wrap!(cmd_list_tree, commands::list_tree);
-wrap!(cmd_get_config, commands::get_config);
-wrap!(cmd_app_version, commands::app_version);
+/* Les wrappers sont ecrits a plat, sans macro_rules : `impl Serialize` dans un type
+de retour n'est pas exprimable simplement par une macro, et un aller-retour CI pour
+une erreur de syntaxe de macro n'en vaut pas le coup. */
 
-macro_rules! wrap1 {
-    ($name:ident, $f:ident, $arg:ident : $ty:ty) => {
-        #[tauri::command]
-        fn $name(
-            state: tauri::State<'_, App>,
-            $arg: $ty,
-        ) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
-            $f(&state.ctx, $arg)
-        }
-    };
+#[tauri::command]
+fn cmd_list_tree(
+    state: tauri::State<'_, App>,
+) -> Result<commands::Ok_<Vec<writer_deck::notes::TreeNode>>, commands::Err_> {
+    commands::list_tree(&state.ctx)
 }
-wrap1!(cmd_read_note, commands::read_note, rel: String);
-wrap1!(cmd_rename, commands::rename, rel: String);
-wrap1!(cmd_delete, commands::delete, rel: String);
-wrap1!(cmd_create_dir, commands::create_dir, rel: String);
-wrap1!(cmd_set_config, commands::set_config, cfg: config::Config);
-wrap1!(cmd_open_external, commands::open_external, url: String);
+
+#[tauri::command]
+fn cmd_read_note(
+    state: tauri::State<'_, App>,
+    rel: String,
+) -> Result<commands::Ok_<commands::NotePayload>, commands::Err_> {
+    commands::read_note(&state.ctx, &rel)
+}
 
 #[tauri::command]
 fn cmd_write_note(
     state: tauri::State<'_, App>,
     rel: String,
     content: String,
-) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
+) -> Result<commands::Ok_<commands::MtimePayload>, commands::Err_> {
     commands::write_note(&state.ctx, &rel, &content)
 }
 
@@ -109,8 +94,63 @@ fn cmd_create_note(
     state: tauri::State<'_, App>,
     dir: String,
     title: String,
-) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
+) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
     commands::create_note(&state.ctx, &dir, &title)
+}
+
+#[tauri::command]
+fn cmd_create_dir(
+    state: tauri::State<'_, App>,
+    rel: String,
+) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
+    commands::create_dir(&state.ctx, &rel)
+}
+
+#[tauri::command]
+fn cmd_rename(
+    state: tauri::State<'_, App>,
+    rel: String,
+    to_title: String,
+) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
+    commands::rename(&state.ctx, &rel, &to_title)
+}
+
+#[tauri::command]
+fn cmd_delete(
+    state: tauri::State<'_, App>,
+    rel: String,
+) -> Result<commands::Ok_<()>, commands::Err_> {
+    commands::delete(&state.ctx, &rel)
+}
+
+#[tauri::command]
+fn cmd_get_config(
+    state: tauri::State<'_, App>,
+) -> Result<commands::Ok_<config::Config>, commands::Err_> {
+    commands::get_config(&state.ctx)
+}
+
+#[tauri::command]
+fn cmd_set_config(
+    state: tauri::State<'_, App>,
+    cfg: config::Config,
+) -> Result<commands::Ok_<config::Config>, commands::Err_> {
+    commands::set_config(&state.ctx, cfg)
+}
+
+#[tauri::command]
+fn cmd_app_version(
+    state: tauri::State<'_, App>,
+) -> Result<commands::Ok_<&'static str>, commands::Err_> {
+    commands::app_version(&state.ctx)
+}
+
+#[tauri::command]
+fn cmd_open_external(
+    state: tauri::State<'_, App>,
+    url: String,
+) -> Result<commands::Ok_<String>, commands::Err_> {
+    commands::open_external(&state.ctx, &url)
 }
 
 /// Le dialogue natif vit dans le plugin `dialog`, cote JS : cette commande ne fait
