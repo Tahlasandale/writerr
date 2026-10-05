@@ -18,6 +18,19 @@ fn data<T>(r: commands::Ok_<T>) -> T {
     r.data.expect("payload attendu")
 }
 
+/// La version annoncée par le binaire doit être celle de `package.json`
+/// (spec §5.6). On lit le vrai fichier au lieu d'écrire une constante : une
+/// constante casse à chaque bump de version, ce qui est l'inverse du but du
+/// test — et le faisait échouer pour de mauvaises raisons.
+fn version_de_package_json() -> String {
+    let brut = include_str!("../../package.json");
+    let v: serde_json::Value = serde_json::from_str(brut).expect("package.json illisible");
+    v["version"]
+        .as_str()
+        .expect("package.json sans champ `version`")
+        .to_string()
+}
+
 fn err_code(e: commands::Err_) -> String {
     e.code
 }
@@ -72,7 +85,7 @@ fn envelope_is_json_shaped() {
     let c = ctx(&e, &t);
     let ok = serde_json::to_value(commands::app_version(&c)).unwrap();
     assert_eq!(ok["ok"], serde_json::json!(true));
-    assert_eq!(ok["data"], serde_json::json!("0.1.0"));
+    assert_eq!(ok["data"], serde_json::json!(version_de_package_json()));
     let err = commands::list_tree(&Ctx {
         root: None,
         ..ctx(&e, &t)
@@ -360,7 +373,11 @@ fn app_version_is_exposed() {
     let c = ctx(&e, &t);
     let v = data(commands::app_version(&c));
     assert_eq!(v, env!("CARGO_PKG_VERSION"));
-    assert_eq!(v, "0.1.0", "cohérent avec package.json (spec §5.6)");
+    assert_eq!(
+        v,
+        version_de_package_json(),
+        "cohérent avec package.json (spec §5.6)"
+    );
 }
 
 #[test]
