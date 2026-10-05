@@ -30,7 +30,10 @@ pub struct Ctx<'a> {
     /// Persistent user settings, mirrored in `config.json`.
     pub config: Mutex<Config>,
     /// Shared with the watcher so our own writes are not reported back.
-    pub self_writes: Mutex<crate::selfwrites::SelfWrites>,
+    ///
+    /// An `Arc`, not a copy: the watcher must consult the VERY SAME registry that
+    /// `write_note` fills, otherwise the anti-loop filter never matches.
+    pub self_writes: std::sync::Arc<Mutex<crate::selfwrites::SelfWrites>>,
     /// In tests: the URLs allowed by `open_external`, captured instead of opened.
     pub open_urls: Mutex<BTreeMap<String, String>>,
     /// How deletions reach the system trash.
@@ -328,7 +331,7 @@ mod tests {
         let c = Ctx {
             root: Some(PathBuf::from("/vault")),
             config: Mutex::new(Config::default()),
-            self_writes: Mutex::new(Default::default()),
+            self_writes: std::sync::Arc::new(Mutex::new(Default::default())),
             open_urls: Mutex::new(BTreeMap::new()),
             trasher: &crate::notes::SystemTrasher,
         };

@@ -137,6 +137,18 @@ Convention : préfixes de commit en anglais (`feat:`, `fix:`), sujet en françai
 - **Décision** : les 14 PNG requis par `generate_context!` sont dérivés de
   `web/icon-512.png` (ImageMagick), versionnés dans `src-tauri/icons/`.
 - **Pourquoi** : `tauri_build` échoue sans elles, avant même de compiler.
+- **Bug latent corrigé au passage** : `Ctx.self_writes` était une *copie* du registre
+  anti-boucle. Le watcher consultait donc un registre vide et n'aurait jamais ignoré
+  nos écritures → boucle d'événements. C'est désormais un `Arc<Mutex<SelfWrites>>`,
+  une seule instance partagée entre les commandes et le watcher.
+
+## `State<'_, T>` n'expose que `&self` : l'état global est derrière un `Mutex`
+
+- **Décision** : `App { ctx: Mutex<Ctx<'static>> }`.
+- **Pourquoi** : `set_root` doit modifier la racine. `State` ne donne pas de `&mut`
+  à l'intérieur (erreur « cannot borrow data in dereference of `State` as mutable »).
+  Un `Mutex` autour du contexte est plus simple qu'un tas de `RwLock` par champ, et
+  il protège aussi la configuration, lue par ailleurs.
 - **Détail qui a coûté un round-trip CI** : Tauri exige des PNG **RGBA**. Les
   icônes régénérées avec `convert … PNG32:` ; sans `-alpha on`, l'erreur est
   « icon …/32x32.png is not RGBA ».

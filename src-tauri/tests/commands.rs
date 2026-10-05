@@ -59,7 +59,7 @@ fn ctx<'a>(e: &'a Env, trasher: &'a dyn Trasher) -> Ctx<'a> {
     Ctx {
         root: Some(e.root.clone()),
         config: Mutex::new(Default::default()),
-        self_writes: Mutex::new(Default::default()),
+        self_writes: std::sync::Arc::new(Mutex::new(Default::default())),
         open_urls: Mutex::new(BTreeMap::new()),
         trasher,
     }

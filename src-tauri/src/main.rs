@@ -8,22 +8,31 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use tauri::Emitter;
 use tauri::Manager; // state(), manage(), get_webview_window()
 
 use writer_deck::commands::{self, Ctx};
-use writer_deck::notes::SystemTrasher;
+use writer_deck::notes::{SystemTrasher, TreeNode};
 use writer_deck::watcher::{FsWatcher, WatchEvent, DEBOUNCE};
 use writer_deck::{config, selfwrites::SelfWrites, FsError};
 
-/// État global partagé par les commandes et le watcher.
+/// État global : le contexte des commandes, derrière un verrou.
+///
+/// `State<'_, T>` n'expose que `&self`, donc tout ce que les commandes doivent
+/// modifier (la racine, la configuration) passe par des interieurs `Mutex`.
 struct App {
-    ctx: Ctx<'static>,
-    /// Clone partagé du registre anti-boucle : le watcher filtre avec exactement
-    /// le même registre que celui où `write_note` marque nos écritures.
-    self_writes: Arc<Mutex<SelfWrites>>,
+    ctx: Mutex<Ctx<'static>>,
+}
+
+/// Erreur interne : un verrou empoisonné signifie qu'un panic a eu lieu ailleurs.
+fn poisoned() -> commands::Err_ {
+    commands::Err_::from(FsError::Io("verrou interne empoisonné".to_owned()))
+}
+
+fn lock(state: &tauri::State<'_, App>) -> Result<MutexGuard<'_, Ctx<'static>>, commands::Err_> {
+    state.ctx.lock().map_err(|_| poisoned())
 }
 
 /// Démarre le watcher sur la racine configurée, s'il y en a une.
@@ -31,11 +40,14 @@ struct App {
 /// Le watcher est un bonus : sans racine, ou si l'OS refuse l'observation,
 /// l'application fonctionne en lecture/écriture directes.
 fn start_watcher(app: &tauri::AppHandle) {
-    let root = app.state::<App>().ctx.root.clone();
+    let state = app.state::<App>();
+    let (root, shared) = match state.ctx.lock() {
+        Ok(ctx) => (ctx.root.clone(), Arc::clone(&ctx.self_writes)),
+        Err(_) => return,
+    };
     let Some(root) = root else {
         return;
     };
-    let shared = Arc::clone(&app.state::<App>().self_writes);
     let Ok(watcher) = FsWatcher::start(&root, shared) else {
         return;
     };
@@ -59,17 +71,14 @@ fn start_watcher(app: &tauri::AppHandle) {
  *
  * Les fonctions de `commands` sont pures et prennent `&Ctx`. Tauri, lui, n'accepte
  * qu'un `State<'_, T>` : ces wrappers font la traduction. Toute la logique testable
- * reste dans `commands` (tests/commands.rs), ces wrappers ne font que déballer.
+ * reste dans `commands` (tests/commands.rs) ; ces wrappers ne font que déballer.
  * ------------------------------------------------------------------ */
-/* Les wrappers sont ecrits a plat, sans macro_rules : `impl Serialize` dans un type
-de retour n'est pas exprimable simplement par une macro, et un aller-retour CI pour
-une erreur de syntaxe de macro n'en vaut pas le coup. */
 
 #[tauri::command]
 fn cmd_list_tree(
     state: tauri::State<'_, App>,
-) -> Result<commands::Ok_<Vec<writer_deck::notes::TreeNode>>, commands::Err_> {
-    commands::list_tree(&state.ctx)
+) -> Result<commands::Ok_<Vec<TreeNode>>, commands::Err_> {
+    commands::list_tree(&lock(&state)?)
 }
 
 #[tauri::command]
@@ -77,7 +86,7 @@ fn cmd_read_note(
     state: tauri::State<'_, App>,
     rel: String,
 ) -> Result<commands::Ok_<commands::NotePayload>, commands::Err_> {
-    commands::read_note(&state.ctx, &rel)
+    commands::read_note(&lock(&state)?, &rel)
 }
 
 #[tauri::command]
@@ -86,7 +95,7 @@ fn cmd_write_note(
     rel: String,
     content: String,
 ) -> Result<commands::Ok_<commands::MtimePayload>, commands::Err_> {
-    commands::write_note(&state.ctx, &rel, &content)
+    commands::write_note(&lock(&state)?, &rel, &content)
 }
 
 #[tauri::command]
@@ -95,7 +104,7 @@ fn cmd_create_note(
     dir: String,
     title: String,
 ) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
-    commands::create_note(&state.ctx, &dir, &title)
+    commands::create_note(&lock(&state)?, &dir, &title)
 }
 
 #[tauri::command]
@@ -103,7 +112,7 @@ fn cmd_create_dir(
     state: tauri::State<'_, App>,
     rel: String,
 ) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
-    commands::create_dir(&state.ctx, &rel)
+    commands::create_dir(&lock(&state)?, &rel)
 }
 
 #[tauri::command]
@@ -112,7 +121,7 @@ fn cmd_rename(
     rel: String,
     to_title: String,
 ) -> Result<commands::Ok_<commands::IdPayload>, commands::Err_> {
-    commands::rename(&state.ctx, &rel, &to_title)
+    commands::rename(&lock(&state)?, &rel, &to_title)
 }
 
 #[tauri::command]
@@ -120,14 +129,14 @@ fn cmd_delete(
     state: tauri::State<'_, App>,
     rel: String,
 ) -> Result<commands::Ok_<()>, commands::Err_> {
-    commands::delete(&state.ctx, &rel)
+    commands::delete(&lock(&state)?, &rel)
 }
 
 #[tauri::command]
 fn cmd_get_config(
     state: tauri::State<'_, App>,
 ) -> Result<commands::Ok_<config::Config>, commands::Err_> {
-    commands::get_config(&state.ctx)
+    commands::get_config(&lock(&state)?)
 }
 
 #[tauri::command]
@@ -135,14 +144,15 @@ fn cmd_set_config(
     state: tauri::State<'_, App>,
     cfg: config::Config,
 ) -> Result<commands::Ok_<config::Config>, commands::Err_> {
-    commands::set_config(&state.ctx, cfg)
+    commands::set_config(&lock(&state)?, cfg)
 }
 
 #[tauri::command]
 fn cmd_app_version(
     state: tauri::State<'_, App>,
 ) -> Result<commands::Ok_<&'static str>, commands::Err_> {
-    commands::app_version(&state.ctx)
+    // `commands::app_version` ne peut pas échouer : il renvoie déjà l'enveloppe.
+    Ok(commands::app_version(&lock(&state)?))
 }
 
 #[tauri::command]
@@ -150,19 +160,18 @@ fn cmd_open_external(
     state: tauri::State<'_, App>,
     url: String,
 ) -> Result<commands::Ok_<String>, commands::Err_> {
-    commands::open_external(&state.ctx, &url)
+    commands::open_external(&lock(&state)?, &url)
 }
 
-/// Le dialogue natif vit dans le plugin `dialog`, cote JS : cette commande ne fait
-/// que refuser un etat sans racine, ce qui declenche l'ecran « Choisir le dossier ».
+/// Renvoie la racine courante. Le dialogue natif est piloté par le plugin
+/// `dialog` côté JS, puis le JS appelle `set_root`.
 #[tauri::command]
-fn pick_root(
-    state: tauri::State<'_, App>,
-) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
-    match state.ctx.root.clone() {
+fn pick_root(state: tauri::State<'_, App>) -> Result<commands::Ok_<String>, commands::Err_> {
+    let ctx = lock(&state)?;
+    match ctx.root.clone() {
         Some(p) => Ok(commands::Ok_ {
             ok: true,
-            data: Some(p),
+            data: Some(p.to_string_lossy().into_owned()),
         }),
         None => Err(commands::Err_::from(FsError::NoRoot)),
     }
@@ -173,24 +182,26 @@ fn pick_root(
 fn set_root(
     state: tauri::State<'_, App>,
     root: Option<String>,
-) -> Result<commands::Ok_<impl serde::Serialize>, commands::Err_> {
-    match root {
-        Some(p) => {
-            let path = PathBuf::from(p);
-            if !path.is_dir() {
-                return Err(commands::Err_::from(FsError::NotFound));
-            }
-            // `State` donne un &mut interieur : on ecrit la racine sans prendre le
-            // verrou config (champs disjoints, donc pas de deadlock).
-            let slot = &mut state.ctx.root;
-            *slot = Some(path);
-            Ok(commands::Ok_ {
-                ok: true,
-                data: Some(()),
-            })
-        }
-        None => Err(commands::Err_::from(FsError::NoRoot)),
+) -> Result<commands::Ok_<String>, commands::Err_> {
+    let Some(p) = root else {
+        return Err(commands::Err_::from(FsError::NoRoot));
+    };
+    let path = PathBuf::from(p);
+    if !path.is_dir() {
+        return Err(commands::Err_::from(FsError::NotFound));
     }
+    {
+        let mut ctx = lock(&state)?;
+        ctx.root = Some(path.clone());
+        // On enregistre aussi dans la configuration : c'est elle qui est relue au
+        // prochain lancement.
+        let mut cfg = ctx.config.lock().map_err(|_| poisoned())?;
+        cfg.root = Some(path.to_string_lossy().into_owned());
+    }
+    Ok(commands::Ok_ {
+        ok: true,
+        data: Some(path.to_string_lossy().into_owned()),
+    })
 }
 
 fn build() -> tauri::Builder<tauri::Wry> {
@@ -202,24 +213,16 @@ fn build() -> tauri::Builder<tauri::Wry> {
             // Box::leak : le Trasher doit vivre aussi longtemps que l'état global.
             let trasher: &'static dyn writer_deck::notes::Trasher =
                 Box::leak(Box::new(SystemTrasher));
-            // Le registre anti-boucle est partage : une seule instance, celle que
-            // le watcher consulte ET que les commandes alimentent via Ctx.
-            let self_writes = Arc::new(Mutex::new(SelfWrites::new()));
-            // MutexGuard n'est pas Clone : on clone l'intérieur déréférencé.
-            let for_ctx = self_writes
-                .lock()
-                .map(|g| SelfWrites::clone(&g))
-                .unwrap_or_else(|_| SelfWrites::new());
 
             app.manage(App {
-                ctx: Ctx {
+                ctx: Mutex::new(Ctx {
                     root: cfg.root.as_ref().map(PathBuf::from),
                     config: Mutex::new(cfg),
-                    self_writes: Mutex::new(for_ctx),
+                    // UNE seule instance, partagée avec le watcher.
+                    self_writes: Arc::new(Mutex::new(SelfWrites::new())),
                     open_urls: Mutex::new(BTreeMap::new()),
                     trasher,
-                },
-                self_writes,
+                }),
             });
 
             // La fermeture demande d'abord une sauvegarde au JS (§6.8).
