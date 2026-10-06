@@ -1,6 +1,6 @@
 [package]
 name = "writer-deck"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 # MSRV de la BIBLIOTHEQUE seule : `cargo test` / `cargo clippy` fonctionnent sur
 # 1.85 (verifie : 237 tests) et ne demandent ni GTK/WebKit ni Rust recent.
