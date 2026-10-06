@@ -1,0 +1,37 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Architectures: amd64
+Codename: stable
+Components: main
+Date: Tue, 06 Oct 2026 06:12:22 +0000
+Label: Writer Deck
+Suite: stable
+MD5Sum:
+ aac986e2b09efba105298c6a91f5dfd4              589 main/binary-amd64/Packages
+ 8d9f901031de9f0efd31d368e1d2997c              512 main/binary-amd64/Packages.xz
+SHA1:
+ ceb83a61fa2fd9bcd4ef4005a37f08f4ffc735f4              589 main/binary-amd64/Packages
+ ca5b5415f74a8deaca9761287f1b0aa08fa80677              512 main/binary-amd64/Packages.xz
+SHA256:
+ 19596e1d46524caea1e49eba887fbdcf88a37c72ebe217afd0d389006a5c8e94              589 main/binary-amd64/Packages
+ 09ec42040b7f51c9bd986a5bb80784cbc6bd0f25caf8007c3bc8336aa0b50d53              512 main/binary-amd64/Packages.xz
+SHA512:
+ 65437a564c6bd2ac26cc947f40dda0c953e8d343b20838e52eec1d5b809db3394a5bd34e4c0c2675650cc85f9040c7d6177b864f4d3f9aea3c561ceace675b4e              589 main/binary-amd64/Packages
+ 68d4a81e7a49f0b845057c46585a71cebb5bc27b26ffba2d8c09f4937d126f464a781d988df1c91bcbb74d16272c781ce1ec948e38463ed0506c165a6b9c932c              512 main/binary-amd64/Packages.xz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCAAdFiEEEEM7KiSQDo9ab7pmDP/HxcuQf0YFAmrEkUYACgkQDP/HxcuQ
+f0bvNxAArdZWHPcMZeCSxLq92B/on0e+0SlvNd/B7DlzqjNVY+LXLd332Cl58+EG
+iTx10u/+PSbSb3jw4KrlF6XUmqNRy2D7U/aXqVm5Zg4jiBHZB9Y4O5ARaX/ylgri
+JeggnhQ22bYg8EJ+80vXEwy6z8OS7GvBjl1U6Eh/FJ/1JPBw+OG1q0aeyWwnJxwo
+Mv+PM+eGn5E7jrZoeddi1MsxdSZY6zXOX9kH6cWakL5Wi4IbJVSLgbGKU+nVe/6a
+nL9R7Zykd6+1YsLwHkphtkku8b5I6ImMK1BAgIB3H3xlrOi9LcPCRik6iq894TRb
+P8qVlsCcKJNQvQhM2PZOxT44JzuU0mouPuCwyEAUz/b53H4t34f2NdCc72gCXz7k
+hdwIO2GvKbuZEh8vq5SQQX+GVX6/3+fyApFdocEXbkodFO5HWWHHOxCueYawv21o
+P+q6OQzsm/dp/xlrN9sQIqH+q54R5aCuk1k1zwgmcDgeQPcrgj6JqcETsFV8kZZr
+3uxLOBVxZNOzsC6053wCMTBthtQRLAeLs+86p4VmEkEL+v+AZYoiCB4WgTx+lvgC
+GMbYiJ3RSQPIYQALohPNDoYPZlwsTLRNC/ZkHPuw534j7rM8VwRRVb4cUZoj2EIP
+5aWZspcbv/1ZMxS11w2j8QexE0mZo+MUjE6gip9OD21l2UFKj0w=
+=ewaU
+-----END PGP SIGNATURE-----
